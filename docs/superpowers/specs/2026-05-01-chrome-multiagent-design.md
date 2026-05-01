@@ -198,9 +198,11 @@ Each Agent specifies its LLM in frontmatter (`llm: claude-opus-4-7`). The Orches
 
 **Configuration hierarchy:**
 ```
-Global config (config/global.json)
+chrome.storage.local (sensitive, extension-isolated)
+└── API Keys (per provider)
+
+Global config (IndexedDB config store)
 ├── Default LLM provider + model
-├── API Keys (per provider)
 ├── Memory retention policy (max N entries)
 └── Tool call timeout
 
