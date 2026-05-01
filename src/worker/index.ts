@@ -11,11 +11,14 @@ let agentRegistry: AgentRegistry
 let episodicMemory: EpisodicMemory
 let knowledgeStore: KnowledgeStore
 let orchestrator: Orchestrator
-let initialized = false
+let initPromise: Promise<void> | null = null
 
-async function init() {
-  if (initialized) return
-  initialized = true
+function init(): Promise<void> {
+  if (!initPromise) initPromise = doInit()
+  return initPromise
+}
+
+async function doInit() {
   skillRegistry = new SkillRegistry()
   agentRegistry = new AgentRegistry()
   episodicMemory = new EpisodicMemory()
@@ -44,7 +47,7 @@ async function init() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
       if (!tab?.id) throw new Error('No active tab')
       if (tool === 'page.screenshot') {
-        return chrome.tabs.captureVisibleTab(undefined, { format: 'png' })
+        return chrome.tabs.captureVisibleTab({ format: 'png' })
       }
       if (tool === 'nav.newTab') {
         const { url } = params as { url?: string }

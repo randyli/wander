@@ -20,6 +20,13 @@ export class OpenAIClient implements LLMClient {
           content: m.content,
         }
       }
+      if (m.role === 'assistant' && m.rawToolCalls) {
+        return {
+          role: 'assistant' as const,
+          content: m.content,
+          tool_calls: m.rawToolCalls as OpenAI.Chat.ChatCompletionMessageToolCall[],
+        }
+      }
       return {
         role: m.role as 'user' | 'assistant',
         content: m.content,
@@ -59,6 +66,7 @@ export class OpenAIClient implements LLMClient {
       stopReason: choice.finish_reason === 'tool_calls' ? 'tool_use'
         : choice.finish_reason === 'length' ? 'max_tokens'
         : 'end_turn',
+      rawAssistantMessage: choice.finish_reason === 'tool_calls' ? choice.message : undefined,
     }
   }
 }

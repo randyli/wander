@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
 import type { LLMMessage, Tool, LLMResponse, ToolCall } from '@shared/types'
 import type { LLMClient, LLMClientOptions } from './client'
 
@@ -24,9 +24,9 @@ export class GeminiClient implements LLMClient {
       name: t.name,
       description: t.description,
       parameters: {
-        type: 'OBJECT' as const,
+        type: SchemaType.OBJECT,
         properties: Object.fromEntries(
-          Object.entries(t.parameters).map(([k, v]) => [k, { type: v.type.toUpperCase(), description: v.description }])
+          Object.entries(t.parameters).map(([k, v]) => [k, { type: (v.type === 'string' ? SchemaType.STRING : SchemaType.OBJECT), description: v.description }])
         ),
       },
     }))

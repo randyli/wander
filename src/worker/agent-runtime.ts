@@ -32,7 +32,11 @@ export class AgentRuntime {
       if (response.stopReason === 'end_turn' || response.toolCalls.length === 0) {
         return response.content
       }
-      messages.push({ role: 'assistant', content: response.content })
+      messages.push({
+        role: 'assistant',
+        content: response.content,
+        rawToolCalls: (response.rawAssistantMessage as { tool_calls?: unknown })?.tool_calls,
+      })
       for (const toolCall of response.toolCalls) {
         if (toolCallCount >= maxToolCalls) {
           throw new Error(`Max tool calls (${maxToolCalls}) exceeded`)

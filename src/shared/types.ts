@@ -6,6 +6,7 @@ export interface LLMMessage {
   content: string
   toolCallId?: string
   toolName?: string
+  rawToolCalls?: unknown  // Provider-specific tool_calls for replay (OpenAI)
 }
 
 export interface ToolParameter {
@@ -29,6 +30,7 @@ export interface LLMResponse {
   content: string
   toolCalls: ToolCall[]
   stopReason: 'end_turn' | 'tool_use' | 'max_tokens'
+  rawAssistantMessage?: unknown  // For providers that need it (OpenAI tool_calls replay)
 }
 
 export interface AgentDef {
