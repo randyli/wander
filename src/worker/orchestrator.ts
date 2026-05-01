@@ -1,4 +1,4 @@
-import type { AgentDef, GlobalConfig } from '@shared/types'
+import type { AgentDef, GlobalConfig, SkillDef, Tool } from '@shared/types'
 import { AgentRuntime } from './agent-runtime'
 import { getLLMClient } from './llm/client'
 
@@ -7,6 +7,7 @@ interface OrchestratorOptions {
   getConfig: () => Promise<GlobalConfig>
   executeToolCall: (tool: string, params: Record<string, unknown>) => Promise<unknown>
   listAgents: () => Promise<AgentDef[]>
+  listSkills: (names: string[]) => Promise<SkillDef[]>
 }
 
 export class Orchestrator {
@@ -17,7 +18,7 @@ export class Orchestrator {
   }
 
   async handleUserMessage(taskId: string, message: string): Promise<string> {
-    const { getApiKey, getConfig, executeToolCall, listAgents } = this.options
+    const { getApiKey, getConfig, executeToolCall, listAgents, listSkills } = this.options
     const config = await getConfig()
     const agents = await listAgents()
     const agent = agents[0] ?? this.defaultAgent(config)
@@ -30,7 +31,17 @@ export class Orchestrator {
 
     const apiKey = await getApiKey(provider)
     const client = getLLMClient(provider, { apiKey, model: agent.llm })
-    const runtime = new AgentRuntime({ agent, client, executeToolCall, maxToolCalls: config.maxToolCallsPerTask })
+
+    const skillDefs = await listSkills(agent.skills)
+    const tools: Tool[] = skillDefs.map(s => ({
+      name: s.name,
+      description: s.description + (s.instructions ? ' ' + s.instructions : ''),
+      parameters: Object.fromEntries(
+        Object.entries(s.parameters).map(([k, v]) => [k, { type: v, description: k }])
+      ),
+    }))
+
+    const runtime = new AgentRuntime({ agent, client, executeToolCall, maxToolCalls: config.maxToolCallsPerTask, tools })
     return runtime.run(message, taskId)
   }
 

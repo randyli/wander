@@ -5,6 +5,14 @@ import { SkillRegistry } from './skill-registry'
 import { AgentRegistry } from './agent-registry'
 import { EpisodicMemory } from './memory/episodic'
 import { KnowledgeStore } from './memory/knowledge'
+import orchestratorAgentMd from '../../agents/orchestrator.md?raw'
+import readPageMd from '../../skills/read-page.md?raw'
+import takeScreenshotMd from '../../skills/take-screenshot.md?raw'
+import navigateMd from '../../skills/navigate.md?raw'
+import fillFormMd from '../../skills/fill-form.md?raw'
+import memoryReadMd from '../../skills/memory-read.md?raw'
+import memoryWriteMd from '../../skills/memory-write.md?raw'
+import newTabMd from '../../skills/new-tab.md?raw'
 
 let skillRegistry: SkillRegistry
 let agentRegistry: AgentRegistry
@@ -60,10 +68,36 @@ async function doInit() {
       })
     },
     listAgents: () => agentRegistry.list(),
+    listSkills: async (names: string[]) => {
+      const all = await skillRegistry.list()
+      return all.filter(s => names.includes(s.name))
+    },
   })
 }
 
-chrome.runtime.onInstalled.addListener(() => { init() })
+async function seedBuiltins() {
+  const [existingAgents, existingSkills] = await Promise.all([
+    agentRegistry.list(),
+    skillRegistry.list(),
+  ])
+  const agentNames = new Set(existingAgents.map(a => a.name))
+  const skillNames = new Set(existingSkills.map(s => s.name))
+
+  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, fillFormMd, memoryReadMd, memoryWriteMd, newTabMd]
+  await Promise.all(builtinSkills.map(md => {
+    const name = md.match(/^name:\s*(.+)$/m)?.[1]?.trim()
+    if (name && !skillNames.has(name)) return skillRegistry.install(md)
+  }))
+
+  if (!agentNames.has('orchestrator')) {
+    await agentRegistry.install(orchestratorAgentMd)
+  }
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await init()
+  await seedBuiltins()
+})
 chrome.runtime.onStartup.addListener(() => { init() })
 
 // Keep service worker alive during active tasks (alarms fire every ~24s)

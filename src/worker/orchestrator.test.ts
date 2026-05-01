@@ -34,6 +34,7 @@ describe('Orchestrator', () => {
       getConfig: vi.fn().mockResolvedValue(mockConfig),
       executeToolCall: vi.fn(),
       listAgents: vi.fn().mockResolvedValue([mockAgent]),
+      listSkills: vi.fn().mockResolvedValue([]),
     })
     const result = await orchestrator.handleUserMessage('task-1', 'Research this')
     expect(result).toBe('Research complete')
@@ -45,6 +46,7 @@ describe('Orchestrator', () => {
       getConfig: vi.fn().mockResolvedValue(mockConfig),
       executeToolCall: vi.fn(),
       listAgents: vi.fn().mockResolvedValue([]),
+      listSkills: vi.fn().mockResolvedValue([]),
     })
     const result = await orchestrator.handleUserMessage('task-2', 'Hello')
     expect(typeof result).toBe('string')

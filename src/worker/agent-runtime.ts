@@ -6,6 +6,7 @@ interface AgentRuntimeOptions {
   client: LLMClient
   executeToolCall: (tool: string, params: Record<string, unknown>) => Promise<unknown>
   maxToolCalls: number
+  tools?: Tool[]
 }
 
 export class AgentRuntime {
@@ -20,7 +21,7 @@ export class AgentRuntime {
     const messages: LLMMessage[] = [
       { role: 'user', content: agent.systemPrompt + '\n\n' + userMessage },
     ]
-    const tools: Tool[] = agent.skills.map(name => ({
+    const tools: Tool[] = this.options.tools ?? agent.skills.map(name => ({
       name,
       description: `Execute skill: ${name}`,
       parameters: {},
@@ -28,7 +29,9 @@ export class AgentRuntime {
 
     let toolCallCount = 0
     while (true) {
+      console.log('[AgentRuntime] sending to LLM →', JSON.stringify({ messages, tools }, null, 2))
       const response = await client.chat(messages, tools)
+      console.log('[AgentRuntime] LLM response ←', JSON.stringify(response, null, 2))
       if (response.stopReason === 'end_turn' || response.toolCalls.length === 0) {
         return response.content
       }

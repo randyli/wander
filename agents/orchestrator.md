@@ -9,6 +9,7 @@ skills:
   - fill-form
   - memory-read
   - memory-write
+  - new-tab
 llm: claude-opus-4-7
 ---
 
