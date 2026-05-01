@@ -1,4 +1,9 @@
 import type { LLMMessage, Tool, LLMResponse } from '@shared/types'
+import { ClaudeClient } from './claude'
+import { OpenAIClient } from './openai'
+import { GeminiClient } from './gemini'
+import { DeepSeekClient } from './deepseek'
+import { QwenClient } from './qwen'
 
 export interface LLMClientOptions {
   apiKey: string
@@ -10,25 +15,10 @@ export interface LLMClient {
 }
 
 export function getLLMClient(provider: string, options: LLMClientOptions): LLMClient {
-  if (provider === 'claude') {
-    const { ClaudeClient } = require('./claude') as typeof import('./claude')
-    return new ClaudeClient(options)
-  }
-  if (provider === 'openai') {
-    const { OpenAIClient } = require('./openai') as typeof import('./openai')
-    return new OpenAIClient(options)
-  }
-  if (provider === 'gemini') {
-    const { GeminiClient } = require('./gemini') as typeof import('./gemini')
-    return new GeminiClient(options)
-  }
-  if (provider === 'deepseek') {
-    const { DeepSeekClient } = require('./deepseek') as typeof import('./deepseek')
-    return new DeepSeekClient(options)
-  }
-  if (provider === 'qwen') {
-    const { QwenClient } = require('./qwen') as typeof import('./qwen')
-    return new QwenClient(options)
-  }
+  if (provider === 'claude') return new ClaudeClient(options)
+  if (provider === 'openai') return new OpenAIClient(options)
+  if (provider === 'gemini') return new GeminiClient(options)
+  if (provider === 'deepseek') return new DeepSeekClient(options)
+  if (provider === 'qwen') return new QwenClient(options)
   throw new Error(`Unknown LLM provider: ${provider}`)
 }
