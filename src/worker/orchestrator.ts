@@ -22,8 +22,10 @@ export class Orchestrator {
     const agents = await listAgents()
     const agent = agents[0] ?? this.defaultAgent(config)
 
-    const provider = agent.llm.startsWith('gpt') ? 'openai'
-      : agent.llm.startsWith('gemini') ? 'gemini'
+    const provider = agent.llm.toLowerCase().startsWith('gpt') ? 'openai'
+      : agent.llm.toLowerCase().startsWith('gemini') ? 'gemini'
+      : agent.llm.toLowerCase().startsWith('deepseek') ? 'deepseek'
+      : agent.llm.toLowerCase().startsWith('qwen') ? 'qwen'
       : 'claude'
 
     const apiKey = await getApiKey(provider)

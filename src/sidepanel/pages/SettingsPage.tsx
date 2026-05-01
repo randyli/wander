@@ -10,10 +10,10 @@ function send(type: MessageType, payload?: unknown): Promise<{ payload: unknown 
   )
 }
 
-const PROVIDERS: LLMProvider[] = ['claude', 'openai', 'gemini']
+const PROVIDERS: LLMProvider[] = ['claude', 'openai', 'gemini', 'deepseek', 'qwen']
 
 export default function SettingsPage() {
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({ claude: '', openai: '', gemini: '' })
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({ claude: '', openai: '', gemini: '', deepseek: '', qwen: '' })
   const [config, setConfig] = useState<GlobalConfig>({ defaultProvider: 'claude', defaultModel: 'claude-opus-4-7', maxToolCallsPerTask: 20, maxEpisodes: 100 })
   const [saved, setSaved] = useState(false)
 

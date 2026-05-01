@@ -22,5 +22,13 @@ export function getLLMClient(provider: string, options: LLMClientOptions): LLMCl
     const { GeminiClient } = require('./gemini') as typeof import('./gemini')
     return new GeminiClient(options)
   }
+  if (provider === 'deepseek') {
+    const { DeepSeekClient } = require('./deepseek') as typeof import('./deepseek')
+    return new DeepSeekClient(options)
+  }
+  if (provider === 'qwen') {
+    const { QwenClient } = require('./qwen') as typeof import('./qwen')
+    return new QwenClient(options)
+  }
   throw new Error(`Unknown LLM provider: ${provider}`)
 }
