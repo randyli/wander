@@ -31,15 +31,17 @@ export class GeminiClient implements LLMClient {
       },
     }))
 
-    const result = await geminiModel.generateContent({
-      contents: [...history, { role: 'user', parts: [{ text: lastMessage.content }] }],
-      ...(functionDeclarations.length > 0 ? { tools: [{ functionDeclarations }] } : {}),
-    })
+    const contents = [...history, { role: 'user', parts: [{ text: lastMessage.content }] }]
+    const result = await geminiModel.generateContent(
+      functionDeclarations.length > 0
+        ? { contents, tools: [{ functionDeclarations }] }
+        : { contents }
+    )
 
     const response = result.response
     const functionCalls = response.functionCalls?.() ?? []
     const toolCalls: ToolCall[] = functionCalls.map((fc, i) => ({
-      id: `gemini_call_${i}`,
+      id: `gemini_call_${Date.now()}_${i}`,
       name: fc.name,
       params: fc.args as Record<string, unknown>,
     }))

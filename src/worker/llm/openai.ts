@@ -12,12 +12,19 @@ export class OpenAIClient implements LLMClient {
   }
 
   async chat(messages: LLMMessage[], tools: Tool[] = []): Promise<LLMResponse> {
-    const oaiMessages = messages.map(m => ({
-      role: m.role as 'user' | 'assistant' | 'tool',
-      content: m.content,
-      ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}),
-      ...(m.toolName ? { name: m.toolName } : {}),
-    }))
+    const oaiMessages = messages.map((m): OpenAI.Chat.ChatCompletionMessageParam => {
+      if (m.role === 'tool') {
+        return {
+          role: 'tool' as const,
+          tool_call_id: m.toolCallId!,
+          content: m.content,
+        }
+      }
+      return {
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }
+    })
 
     const oaiTools = tools.map(t => ({
       type: 'function' as const,

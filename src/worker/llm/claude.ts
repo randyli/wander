@@ -12,12 +12,17 @@ export class ClaudeClient implements LLMClient {
   }
 
   async chat(messages: LLMMessage[], tools: Tool[] = []): Promise<LLMResponse> {
-    const anthropicMessages = messages.map(m => ({
-      role: m.role === 'tool' ? ('user' as const) : (m.role as 'user' | 'assistant'),
-      content: m.role === 'tool'
-        ? [{ type: 'tool_result' as const, tool_use_id: m.toolCallId!, content: m.content }]
-        : m.content,
-    }))
+    const anthropicMessages = messages.map(m => {
+      if (m.role === 'tool' && !m.toolCallId) {
+        throw new Error('Tool messages must include toolCallId')
+      }
+      return {
+        role: m.role === 'tool' ? ('user' as const) : (m.role as 'user' | 'assistant'),
+        content: m.role === 'tool'
+          ? [{ type: 'tool_result' as const, tool_use_id: m.toolCallId!, content: m.content }]
+          : m.content,
+      }
+    })
 
     const anthropicTools = tools.map(t => ({
       name: t.name,
