@@ -12,13 +12,17 @@ export class GeminiClient implements LLMClient {
   }
 
   async chat(messages: LLMMessage[], tools: Tool[] = []): Promise<LLMResponse> {
-    const geminiModel = this.genAI.getGenerativeModel({ model: this.model })
+    const systemMsg = messages.find(m => m.role === 'system')
+    const geminiModel = this.genAI.getGenerativeModel({
+      model: this.model,
+      ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
+    })
 
-    const history = messages.slice(0, -1).map(m => ({
+    const history = messages.filter(m => m.role !== 'system').slice(0, -1).map(m => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }))
-    const lastMessage = messages[messages.length - 1]
+    const lastMessage = messages.filter(m => m.role !== 'system').at(-1)!
 
     const functionDeclarations = tools.map(t => ({
       name: t.name,

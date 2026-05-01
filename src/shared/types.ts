@@ -1,5 +1,5 @@
 export type LLMProvider = 'claude' | 'openai' | 'gemini' | 'deepseek' | 'qwen'
-export type Role = 'user' | 'assistant' | 'tool'
+export type Role = 'system' | 'user' | 'assistant' | 'tool'
 
 export interface LLMMessage {
   role: Role

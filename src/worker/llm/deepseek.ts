@@ -27,7 +27,7 @@ export class DeepSeekClient implements LLMClient {
           tool_calls: m.rawToolCalls as OpenAI.Chat.ChatCompletionMessageToolCall[],
         }
       }
-      return { role: m.role as 'user' | 'assistant', content: m.content }
+      return { role: m.role as 'system' | 'user' | 'assistant', content: m.content }
     })
 
     const oaiTools = tools.map(t => ({

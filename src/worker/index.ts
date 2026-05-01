@@ -1,5 +1,5 @@
 import { MessageType } from '@shared/messages'
-import type { GlobalConfig } from '@shared/types'
+import type { GlobalConfig, LLMMessage } from '@shared/types'
 import { Orchestrator } from './orchestrator'
 import { SkillRegistry } from './skill-registry'
 import { AgentRegistry } from './agent-registry'
@@ -9,6 +9,7 @@ import orchestratorAgentMd from '../../agents/orchestrator.md?raw'
 import readPageMd from '../../skills/read-page.md?raw'
 import takeScreenshotMd from '../../skills/take-screenshot.md?raw'
 import navigateMd from '../../skills/navigate.md?raw'
+import clickMd from '../../skills/click.md?raw'
 import fillFormMd from '../../skills/fill-form.md?raw'
 import memoryReadMd from '../../skills/memory-read.md?raw'
 import memoryWriteMd from '../../skills/memory-write.md?raw'
@@ -39,7 +40,9 @@ async function doInit() {
   orchestrator = new Orchestrator({
     getApiKey: async (provider) => {
       const result = await chrome.storage.local.get(`apiKey_${provider}`)
-      return (result[`apiKey_${provider}`] as string) ?? ''
+      const key = (result[`apiKey_${provider}`] as string) ?? ''
+      if (!key) throw new Error(`No API key set for ${provider}. Please add it in Settings.`)
+      return key
     },
     getConfig: async () => {
       const result = await chrome.storage.local.get('config')
@@ -50,25 +53,68 @@ async function doInit() {
         maxEpisodes: 100,
       }
     },
-    executeToolCall: async (tool, params) => {
+    loadHistory: async () => {
+      const result = await chrome.storage.local.get('conversationHistory')
+      return (result.conversationHistory as LLMMessage[]) ?? []
+    },
+    saveHistory: async (history) => {
+      await chrome.storage.local.set({ conversationHistory: history })
+    },
+    executeToolCall: async (toolLlm, params) => {
+      const tool = toolLlm.replace(/_/g, '.')
+      if (tool === 'memory.set') {
+        const { key, value, tags } = params as { key: string; value: string; tags?: string }
+        await knowledgeStore.set(key, value, tags ? tags.split(',').map(t => t.trim()) : [])
+        return { ok: true }
+      }
+      if (tool === 'memory.get') {
+        const { key } = params as { key: string }
+        const entry = await knowledgeStore.get(key)
+        return entry ? entry.value : null
+      }
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
       if (!tab?.id) throw new Error('No active tab')
       if (tool === 'page.screenshot') {
         return chrome.tabs.captureVisibleTab({ format: 'png' })
       }
-      if (tool === 'nav.goto' && (params as { new_tab?: string }).new_tab === 'true') {
-        const { url } = params as { url?: string }
-        return chrome.tabs.create({ url })
+      if (tool === 'nav.goto') {
+        const { url, new_tab } = params as { url: string; new_tab?: string }
+        if (new_tab === 'true') return chrome.tabs.create({ url })
+        await chrome.tabs.update(tab.id, { url })
+        await new Promise(resolve => {
+          chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+            if (tabId === tab.id && info.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener)
+              resolve(undefined)
+            }
+          })
+        })
+        return { ok: true, url }
       }
       if (tool === 'nav.newTab') {
         const { url } = params as { url?: string }
         return chrome.tabs.create({ url })
       }
-      return chrome.tabs.sendMessage(tab.id, {
+      if (tool === 'nav.back') {
+        await chrome.tabs.goBack(tab.id)
+        return { ok: true }
+      }
+      if (tool === 'nav.forward') {
+        await chrome.tabs.goForward(tab.id)
+        return { ok: true }
+      }
+      const msg = {
         type: MessageType.TOOL_CALL,
         requestId: crypto.randomUUID(),
         payload: { tool, params },
-      })
+      }
+      try {
+        return await chrome.tabs.sendMessage(tab.id, msg)
+      } catch {
+        const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? []
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files })
+        return chrome.tabs.sendMessage(tab.id, msg)
+      }
     },
     listAgents: () => agentRegistry.list(),
     listSkills: async (names: string[]) => {
@@ -79,22 +125,10 @@ async function doInit() {
 }
 
 async function seedBuiltins() {
-  const [existingAgents, existingSkills] = await Promise.all([
-    agentRegistry.list(),
-    skillRegistry.list(),
-  ])
-  const agentNames = new Set(existingAgents.map(a => a.name))
-  const skillNames = new Set(existingSkills.map(s => s.name))
+  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, clickMd, fillFormMd, memoryReadMd, memoryWriteMd]
+  await Promise.all(builtinSkills.map(md => skillRegistry.install(md)))
 
-  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, fillFormMd, memoryReadMd, memoryWriteMd]
-  await Promise.all(builtinSkills.map(md => {
-    const name = md.match(/^name:\s*(.+)$/m)?.[1]?.trim()
-    if (name && !skillNames.has(name)) return skillRegistry.install(md)
-  }))
-
-  if (!agentNames.has('orchestrator')) {
-    await agentRegistry.install(orchestratorAgentMd)
-  }
+  await agentRegistry.install(orchestratorAgentMd)
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -149,6 +183,13 @@ async function handleMessage(message: { type: MessageType; requestId: string; pa
       return { type: MessageType.RESPONSE, requestId, payload: await knowledgeStore.list() }
     case MessageType.DELETE_KNOWLEDGE:
       await knowledgeStore.delete((payload as { key: string }).key)
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
+    case MessageType.GET_HISTORY: {
+      const result = await chrome.storage.local.get('conversationHistory')
+      return { type: MessageType.RESPONSE, requestId, payload: result.conversationHistory ?? [] }
+    }
+    case MessageType.CLEAR_HISTORY:
+      await chrome.storage.local.remove('conversationHistory')
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
     case MessageType.GET_CONFIG: {
       const result = await chrome.storage.local.get('config')

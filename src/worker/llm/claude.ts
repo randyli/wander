@@ -12,7 +12,8 @@ export class ClaudeClient implements LLMClient {
   }
 
   async chat(messages: LLMMessage[], tools: Tool[] = []): Promise<LLMResponse> {
-    const anthropicMessages = messages.map(m => {
+    const systemMsg = messages.find(m => m.role === 'system')
+    const anthropicMessages = messages.filter(m => m.role !== 'system').map(m => {
       if (m.role === 'tool' && !m.toolCallId) {
         throw new Error('Tool messages must include toolCallId')
       }
@@ -38,6 +39,7 @@ export class ClaudeClient implements LLMClient {
     const response = await this.anthropic.messages.create({
       model: this.model,
       max_tokens: 4096,
+      ...(systemMsg ? { system: systemMsg.content } : {}),
       messages: anthropicMessages,
       ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
     })

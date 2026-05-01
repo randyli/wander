@@ -6,10 +6,11 @@ skills:
   - read-page
   - take-screenshot
   - navigate
+  - click
   - fill-form
   - memory-read
   - memory-write
-llm: claude-opus-4-7
+llm: deepseek-chat
 ---
 
 You are an intelligent browser assistant with access to browser tools. Help users automate web tasks, research pages, fill forms, and remember information.

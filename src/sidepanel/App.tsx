@@ -24,7 +24,9 @@ export default function App() {
         ))}
       </nav>
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        {activeTab === 'chat' && <ChatPanel />}
+        <div style={{ display: activeTab === 'chat' ? 'flex' : 'none', height: '100%', flexDirection: 'column' }}>
+          <ChatPanel />
+        </div>
         {activeTab === 'skills' && <SkillsPage />}
         {activeTab === 'memory' && <MemoryPage />}
         {activeTab === 'settings' && <SettingsPage />}

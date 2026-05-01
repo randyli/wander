@@ -16,10 +16,12 @@ export class AgentRuntime {
     this.options = options
   }
 
-  async run(userMessage: string, _taskId: string): Promise<string> {
+  async run(userMessage: string, _taskId: string, history: LLMMessage[] = []): Promise<string> {
     const { agent, client, executeToolCall, maxToolCalls } = this.options
     const messages: LLMMessage[] = [
-      { role: 'user', content: agent.systemPrompt + '\n\n' + userMessage },
+      { role: 'system', content: agent.systemPrompt },
+      ...history,
+      { role: 'user', content: userMessage },
     ]
     const tools: Tool[] = this.options.tools ?? agent.skills.map(name => ({
       name,
@@ -46,9 +48,15 @@ export class AgentRuntime {
         }
         toolCallCount++
         const result = await executeToolCall(toolCall.name, toolCall.params)
+        const payload = (result as { payload?: { result?: unknown; error?: string } })?.payload
+        const unwrapped = payload?.error ? `Error: ${payload.error}` : (payload?.result ?? result)
+        const raw = typeof unwrapped === 'string' ? unwrapped : JSON.stringify(unwrapped)
+        const content = raw.startsWith('data:image/')
+          ? '[Screenshot captured]'
+          : raw.length > 8000 ? raw.slice(0, 8000) + '...[truncated]' : raw
         messages.push({
           role: 'tool',
-          content: typeof result === 'string' ? result : JSON.stringify(result),
+          content,
           toolCallId: toolCall.id,
           toolName: toolCall.name,
         })

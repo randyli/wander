@@ -22,6 +22,19 @@ export default function ChatPanel() {
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  useEffect(() => {
+    sendToWorker(MessageType.GET_HISTORY, {}).then(r => {
+      if ('payload' in r) {
+        const history = r.payload as Array<{ role: string; content: string }>
+        setMessages(history.map(m => ({
+          id: crypto.randomUUID(),
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })))
+      }
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   async function handleSend() {
@@ -44,8 +57,16 @@ export default function ChatPanel() {
     }
   }
 
+  async function handleClear() {
+    await sendToWorker(MessageType.CLEAR_HISTORY, {})
+    setMessages([])
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '4px 16px', borderBottom: '1px solid #f3f4f6' }}>
+        <button onClick={handleClear} style={{ fontSize: 11, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer' }}>清除历史</button>
+      </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', color: '#9ca3af', marginTop: 40, fontSize: 14 }}>

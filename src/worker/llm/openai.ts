@@ -28,7 +28,7 @@ export class OpenAIClient implements LLMClient {
         }
       }
       return {
-        role: m.role as 'user' | 'assistant',
+        role: m.role as 'system' | 'user' | 'assistant',
         content: m.content,
       }
     })
