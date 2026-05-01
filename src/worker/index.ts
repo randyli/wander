@@ -12,7 +12,6 @@ import navigateMd from '../../skills/navigate.md?raw'
 import fillFormMd from '../../skills/fill-form.md?raw'
 import memoryReadMd from '../../skills/memory-read.md?raw'
 import memoryWriteMd from '../../skills/memory-write.md?raw'
-import newTabMd from '../../skills/new-tab.md?raw'
 
 let skillRegistry: SkillRegistry
 let agentRegistry: AgentRegistry
@@ -57,6 +56,10 @@ async function doInit() {
       if (tool === 'page.screenshot') {
         return chrome.tabs.captureVisibleTab({ format: 'png' })
       }
+      if (tool === 'nav.goto' && (params as { new_tab?: string }).new_tab === 'true') {
+        const { url } = params as { url?: string }
+        return chrome.tabs.create({ url })
+      }
       if (tool === 'nav.newTab') {
         const { url } = params as { url?: string }
         return chrome.tabs.create({ url })
@@ -83,7 +86,7 @@ async function seedBuiltins() {
   const agentNames = new Set(existingAgents.map(a => a.name))
   const skillNames = new Set(existingSkills.map(s => s.name))
 
-  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, fillFormMd, memoryReadMd, memoryWriteMd, newTabMd]
+  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, fillFormMd, memoryReadMd, memoryWriteMd]
   await Promise.all(builtinSkills.map(md => {
     const name = md.match(/^name:\s*(.+)$/m)?.[1]?.trim()
     if (name && !skillNames.has(name)) return skillRegistry.install(md)

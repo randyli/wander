@@ -1,11 +1,15 @@
 ---
 name: navigate
 type: skill
-description: Navigate to a URL or go back/forward in browser history
+description: Navigate the browser — go to a URL, open a new tab, or go back/forward
 tool: nav.goto
 parameters:
   url: string
+  new_tab: string
   direction: string
 ---
 
-Navigate the browser. Provide url to go to a specific page, or direction ("back"/"forward") to move through history.
+Navigate the browser:
+- To go to a URL in the current tab: provide `url`
+- To open a URL in a new tab: provide `url` and set `new_tab` to "true"
+- To go back or forward: provide `direction` as "back" or "forward"
