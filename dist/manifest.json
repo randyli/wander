@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Multi-Agent Framework",
+  "version": "0.1.0",
+  "description": "Chrome extension multi-agent framework",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "alarms",
+    "sidePanel",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "service-worker-loader.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "js": [
+        "assets/index.ts-loader-DhXOw0KD.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open Agent Panel"
+  },
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "resources": [
+        "assets/messages-BCn9nsdB.js",
+        "assets/index.ts-PJrCKMJL.js"
+      ],
+      "use_dynamic_url": false
+    }
+  ]
+}
