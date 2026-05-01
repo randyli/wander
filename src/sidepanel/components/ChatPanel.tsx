@@ -4,11 +4,15 @@ import MessageBubble from './MessageBubble'
 
 interface Message { id: string; role: 'user' | 'assistant'; content: string; agentName?: string }
 
-function sendToWorker(type: MessageType, payload: unknown): Promise<{ payload: { text: string; agentName: string } }> {
+type WorkerResponse = { payload: { text: string; agentName: string } } | { error: string }
+
+function sendToWorker(type: MessageType, payload: unknown): Promise<WorkerResponse> {
   return new Promise((resolve, reject) =>
-    chrome.runtime.sendMessage({ type, requestId: crypto.randomUUID(), payload }, r =>
-      chrome.runtime.lastError ? reject(new Error(chrome.runtime.lastError.message)) : resolve(r)
-    )
+    chrome.runtime.sendMessage({ type, requestId: crypto.randomUUID(), payload }, r => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message))
+      else if (r === undefined) reject(new Error('Service worker did not respond. Check chrome://extensions for errors.'))
+      else resolve(r)
+    })
   )
 }
 
@@ -28,6 +32,7 @@ export default function ChatPanel() {
     setLoading(true)
     try {
       const response = await sendToWorker(MessageType.USER_MESSAGE, { text })
+      if ('error' in response) throw new Error(response.error)
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(), role: 'assistant',
         content: response.payload.text, agentName: response.payload.agentName,
