@@ -64,6 +64,11 @@ export class Orchestrator {
     return result
   }
 
+  clearHistory(): void {
+    this.history = []
+    this.options.saveHistory([])
+  }
+
   private defaultAgent(config: GlobalConfig): AgentDef {
     return {
       name: 'default',

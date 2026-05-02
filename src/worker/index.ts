@@ -189,7 +189,7 @@ async function handleMessage(message: { type: MessageType; requestId: string; pa
       return { type: MessageType.RESPONSE, requestId, payload: result.conversationHistory ?? [] }
     }
     case MessageType.CLEAR_HISTORY:
-      await chrome.storage.local.remove('conversationHistory')
+      orchestrator.clearHistory()
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
     case MessageType.GET_CONFIG: {
       const result = await chrome.storage.local.get('config')
