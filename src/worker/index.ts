@@ -21,6 +21,21 @@ let knowledgeStore: KnowledgeStore
 let orchestrator: Orchestrator
 let initPromise: Promise<void> | null = null
 
+function waitForTab(tabId: number, timeout = 10000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const deadline = Date.now() + timeout
+    function check() {
+      chrome.tabs.get(tabId, tab => {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message))
+        if (tab.status === 'complete') return resolve()
+        if (Date.now() > deadline) return resolve()  // proceed anyway after timeout
+        setTimeout(check, 200)
+      })
+    }
+    check()
+  })
+}
+
 function init(): Promise<void> {
   if (!initPromise) initPromise = doInit()
   return initPromise
@@ -81,13 +96,19 @@ async function doInit() {
         const { url, new_tab } = params as { url: string; new_tab?: string }
         if (new_tab === 'true') return chrome.tabs.create({ url })
         await chrome.tabs.update(tab.id, { url })
-        await new Promise(resolve => {
-          chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+        await new Promise<void>(resolve => {
+          const timer = setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(listener)
+            resolve()
+          }, 15000)
+          function listener(tabId: number, info: chrome.tabs.TabChangeInfo) {
             if (tabId === tab.id && info.status === 'complete') {
+              clearTimeout(timer)
               chrome.tabs.onUpdated.removeListener(listener)
-              resolve(undefined)
+              resolve()
             }
-          })
+          }
+          chrome.tabs.onUpdated.addListener(listener)
         })
         return { ok: true, url }
       }
@@ -111,6 +132,7 @@ async function doInit() {
       try {
         return await chrome.tabs.sendMessage(tab.id, msg)
       } catch {
+        await waitForTab(tab.id)
         const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? []
         await chrome.scripting.executeScript({ target: { tabId: tab.id }, files })
         return chrome.tabs.sendMessage(tab.id, msg)
@@ -156,7 +178,7 @@ async function handleMessage(message: { type: MessageType; requestId: string; pa
     case MessageType.USER_MESSAGE: {
       const { text } = payload as { text: string }
       const result = await orchestrator.handleUserMessage(crypto.randomUUID(), text)
-      return { type: MessageType.AGENT_MESSAGE, requestId, payload: { text: result, agentName: 'assistant' } }
+      return { type: MessageType.AGENT_MESSAGE, requestId, payload: { text: result.content, thinking: result.thinking, agentName: 'assistant' } }
     }
     case MessageType.LIST_SKILLS:
       return { type: MessageType.RESPONSE, requestId, payload: await skillRegistry.list() }

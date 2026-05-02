@@ -1,5 +1,6 @@
 import type { AgentDef, GlobalConfig, LLMMessage, SkillDef, Tool } from '@shared/types'
 import { AgentRuntime } from './agent-runtime'
+import type { RunResult } from './agent-runtime'
 import { getLLMClient } from './llm/client'
 
 interface OrchestratorOptions {
@@ -22,7 +23,7 @@ export class Orchestrator {
     this.options = options
   }
 
-  async handleUserMessage(taskId: string, message: string): Promise<string> {
+  async handleUserMessage(taskId: string, message: string): Promise<RunResult> {
     const { getApiKey, getConfig, executeToolCall, listAgents, listSkills } = this.options
 
     if (this.history === null) {
@@ -55,7 +56,7 @@ export class Orchestrator {
     const result = await runtime.run(message, taskId, this.history)
 
     this.history.push({ role: 'user', content: message })
-    this.history.push({ role: 'assistant', content: result })
+    this.history.push({ role: 'assistant', content: result.content })
     if (this.history.length > MAX_HISTORY) {
       this.history = this.history.slice(-MAX_HISTORY)
     }

@@ -30,7 +30,8 @@ export interface LLMResponse {
   content: string
   toolCalls: ToolCall[]
   stopReason: 'end_turn' | 'tool_use' | 'max_tokens'
-  rawAssistantMessage?: unknown  // For providers that need it (OpenAI tool_calls replay)
+  thinking?: string
+  rawAssistantMessage?: unknown
 }
 
 export interface AgentDef {

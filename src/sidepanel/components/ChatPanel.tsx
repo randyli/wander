@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import { MessageType } from '@shared/messages'
 import MessageBubble from './MessageBubble'
 
-interface Message { id: string; role: 'user' | 'assistant'; content: string; agentName?: string }
+interface Message { id: string; role: 'user' | 'assistant'; content: string; agentName?: string; thinking?: string }
 
-type WorkerResponse = { payload: { text: string; agentName: string } } | { error: string }
+type WorkerResponse = { payload: { text: string; agentName: string; thinking?: string } } | { error: string }
 
 function sendToWorker(type: MessageType, payload: unknown): Promise<WorkerResponse> {
   return new Promise((resolve, reject) =>
@@ -48,7 +48,9 @@ export default function ChatPanel() {
       if ('error' in response) throw new Error(response.error)
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(), role: 'assistant',
-        content: response.payload.text, agentName: response.payload.agentName,
+        content: response.payload.text,
+        thinking: response.payload.thinking,
+        agentName: response.payload.agentName,
       }])
     } catch (err) {
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: `Error: ${err}` }])
@@ -73,7 +75,7 @@ export default function ChatPanel() {
             Start a conversation with your agent
           </div>
         )}
-        {messages.map(msg => <MessageBubble key={msg.id} role={msg.role} content={msg.content} agentName={msg.agentName} />)}
+        {messages.map(msg => <MessageBubble key={msg.id} role={msg.role} content={msg.content} agentName={msg.agentName} thinking={msg.thinking} />)}
         {loading && <MessageBubble role="assistant" content="Thinking…" />}
         <div ref={bottomRef} />
       </div>

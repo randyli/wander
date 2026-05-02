@@ -57,12 +57,15 @@ export class DeepSeekClient implements LLMClient {
       params: JSON.parse(tc.function.arguments) as Record<string, unknown>,
     }))
 
+    const reasoning = (choice.message as unknown as { reasoning_content?: string }).reasoning_content
+
     return {
       content: choice.message.content ?? '',
       toolCalls,
       stopReason: choice.finish_reason === 'tool_calls' ? 'tool_use'
         : choice.finish_reason === 'length' ? 'max_tokens'
         : 'end_turn',
+      thinking: reasoning || undefined,
       rawAssistantMessage: choice.finish_reason === 'tool_calls' ? choice.message : undefined,
     }
   }
