@@ -6,6 +6,8 @@ import { AgentRegistry } from './agent-registry'
 import { EpisodicMemory } from './memory/episodic'
 import { KnowledgeStore } from './memory/knowledge'
 import orchestratorAgentMd from '../../agents/orchestrator.md?raw'
+import browserAgentMd from '../../agents/browser-agent.md?raw'
+import searchAgentMd from '../../agents/search-agent.md?raw'
 import readPageMd from '../../skills/read-page.md?raw'
 import takeScreenshotMd from '../../skills/take-screenshot.md?raw'
 import navigateMd from '../../skills/navigate.md?raw'
@@ -151,6 +153,8 @@ async function seedBuiltins() {
   await Promise.all(builtinSkills.map(md => skillRegistry.install(md)))
 
   await agentRegistry.install(orchestratorAgentMd)
+  await agentRegistry.install(browserAgentMd)
+  await agentRegistry.install(searchAgentMd)
 }
 
 chrome.runtime.onInstalled.addListener(async () => {

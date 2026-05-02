@@ -15,9 +15,28 @@ interface OrchestratorOptions {
 
 const MAX_HISTORY = 100
 
+function detectProvider(model: string): string {
+  const m = model.toLowerCase()
+  if (m.startsWith('gpt')) return 'openai'
+  if (m.startsWith('gemini')) return 'gemini'
+  if (m.startsWith('deepseek')) return 'deepseek'
+  if (m.startsWith('qwen')) return 'qwen'
+  return 'claude'
+}
+
+function buildTools(skillDefs: SkillDef[]): Tool[] {
+  return skillDefs.map(s => ({
+    name: s.tool.replace(/\./g, '_'),
+    description: s.description + (s.instructions ? ' ' + s.instructions : ''),
+    parameters: Object.fromEntries(
+      Object.entries(s.parameters).map(([k, v]) => [k, { type: v, description: k }])
+    ),
+  }))
+}
+
 export class Orchestrator {
   private options: OrchestratorOptions
-  private history: LLMMessage[] | null = null  // null = not yet loaded
+  private history: LLMMessage[] | null = null
 
   constructor(options: OrchestratorOptions) {
     this.options = options
@@ -31,28 +50,45 @@ export class Orchestrator {
     }
 
     const config = await getConfig()
-    const agents = await listAgents()
-    const agent = agents[0] ?? this.defaultAgent(config)
+    const allAgents = await listAgents()
+    const orchestratorAgent = allAgents[0] ?? this.defaultAgent(config)
+    const subAgents = allAgents.slice(1)
 
-    const provider = agent.llm.toLowerCase().startsWith('gpt') ? 'openai'
-      : agent.llm.toLowerCase().startsWith('gemini') ? 'gemini'
-      : agent.llm.toLowerCase().startsWith('deepseek') ? 'deepseek'
-      : agent.llm.toLowerCase().startsWith('qwen') ? 'qwen'
-      : 'claude'
-
+    const provider = detectProvider(orchestratorAgent.llm)
     const apiKey = await getApiKey(provider)
-    const client = getLLMClient(provider, { apiKey, model: agent.llm })
+    const client = getLLMClient(provider, { apiKey, model: orchestratorAgent.llm })
 
-    const skillDefs = await listSkills(agent.skills)
-    const tools: Tool[] = skillDefs.map(s => ({
-      name: s.tool.replace(/\./g, '_'),
-      description: s.description + (s.instructions ? ' ' + s.instructions : ''),
-      parameters: Object.fromEntries(
-        Object.entries(s.parameters).map(([k, v]) => [k, { type: v, description: k }])
-      ),
-    }))
+    const skillDefs = await listSkills(orchestratorAgent.skills)
+    const tools: Tool[] = buildTools(skillDefs)
 
-    const runtime = new AgentRuntime({ agent, client, executeToolCall, maxToolCalls: config.maxToolCallsPerTask, tools })
+    if (subAgents.length > 0) {
+      tools.push({
+        name: 'agent_call',
+        description: 'Delegate a task to a specialized sub-agent. Available sub-agents:\n' +
+          subAgents.map(a => `- ${a.name}: ${a.description}`).join('\n'),
+        parameters: {
+          agent_name: { type: 'string', description: 'Name of the sub-agent to call' },
+          task: { type: 'string', description: 'Detailed task description for the sub-agent' },
+        },
+      })
+    }
+
+    const self = this
+    const wrappedExecuteToolCall = async (toolName: string, params: Record<string, unknown>): Promise<unknown> => {
+      if (toolName === 'agent_call') {
+        const { agent_name, task } = params as { agent_name: string; task: string }
+        return self.runSubAgent(agent_name, task, allAgents, config)
+      }
+      return executeToolCall(toolName, params)
+    }
+
+    const runtime = new AgentRuntime({
+      agent: orchestratorAgent,
+      client,
+      executeToolCall: wrappedExecuteToolCall,
+      maxToolCalls: config.maxToolCallsPerTask,
+      tools,
+    })
     const result = await runtime.run(message, taskId, this.history)
 
     this.history.push({ role: 'user', content: message })
@@ -63,6 +99,33 @@ export class Orchestrator {
     await this.options.saveHistory(this.history)
 
     return result
+  }
+
+  private async runSubAgent(
+    agentName: string,
+    task: string,
+    allAgents: AgentDef[],
+    config: GlobalConfig,
+  ): Promise<string> {
+    const subAgent = allAgents.find(a => a.name === agentName)
+    if (!subAgent) throw new Error(`Sub-agent not found: "${agentName}". Available: ${allAgents.slice(1).map(a => a.name).join(', ')}`)
+
+    const provider = detectProvider(subAgent.llm)
+    const apiKey = await this.options.getApiKey(provider)
+    const client = getLLMClient(provider, { apiKey, model: subAgent.llm })
+
+    const skillDefs = await this.options.listSkills(subAgent.skills)
+    const tools = buildTools(skillDefs)
+
+    const runtime = new AgentRuntime({
+      agent: subAgent,
+      client,
+      executeToolCall: this.options.executeToolCall,
+      maxToolCalls: config.maxToolCallsPerTask,
+      tools,
+    })
+    const result = await runtime.run(task, crypto.randomUUID())
+    return result.content
   }
 
   clearHistory(): void {
