@@ -8,6 +8,7 @@ skills:
   - read-page
   - fill-form
   - take-screenshot
+  - read-history
 llm: deepseek-chat
 ---
 

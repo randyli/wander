@@ -15,6 +15,7 @@ import clickMd from '../../skills/click.md?raw'
 import fillFormMd from '../../skills/fill-form.md?raw'
 import memoryReadMd from '../../skills/memory-read.md?raw'
 import memoryWriteMd from '../../skills/memory-write.md?raw'
+import readHistoryMd from '../../skills/read-history.md?raw'
 
 let skillRegistry: SkillRegistry
 let agentRegistry: AgentRegistry
@@ -79,6 +80,12 @@ async function doInit() {
     },
     executeToolCall: async (toolLlm, params) => {
       const tool = toolLlm.replace(/_/g, '.')
+      if (tool === 'history.search') {
+        const { query = '', max_results = '20', days_back = '7' } = params as { query?: string; max_results?: string; days_back?: string }
+        const startTime = Date.now() - Number(days_back) * 24 * 60 * 60 * 1000
+        const items = await chrome.history.search({ text: query, startTime, maxResults: Number(max_results) })
+        return items.map(h => ({ title: h.title, url: h.url, lastVisit: new Date(h.lastVisitTime ?? 0).toLocaleString() }))
+      }
       if (tool === 'memory.set') {
         const { key, value, tags } = params as { key: string; value: string; tags?: string }
         await knowledgeStore.set(key, value, tags ? tags.split(',').map(t => t.trim()) : [])
@@ -149,7 +156,7 @@ async function doInit() {
 }
 
 async function seedBuiltins() {
-  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, clickMd, fillFormMd, memoryReadMd, memoryWriteMd]
+  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, clickMd, fillFormMd, memoryReadMd, memoryWriteMd, readHistoryMd]
   await Promise.all(builtinSkills.map(md => skillRegistry.install(md)))
 
   await agentRegistry.install(orchestratorAgentMd)
@@ -158,6 +165,7 @@ async function seedBuiltins() {
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
   await init()
   await seedBuiltins()
 })

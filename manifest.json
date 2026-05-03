@@ -3,7 +3,7 @@
   "name": "Multi-Agent Framework",
   "version": "0.1.0",
   "description": "Chrome extension multi-agent framework",
-  "permissions": ["activeTab", "scripting", "storage", "alarms", "sidePanel", "tabs"],
+  "permissions": ["activeTab", "scripting", "storage", "alarms", "sidePanel", "tabs", "history"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "src/worker/index.ts",
