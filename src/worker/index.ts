@@ -5,6 +5,8 @@ import { SkillRegistry } from './skill-registry'
 import { AgentRegistry } from './agent-registry'
 import { EpisodicMemory } from './memory/episodic'
 import { KnowledgeStore } from './memory/knowledge'
+import { SessionMemoryManager } from './memory/session'
+import { SystemMemoryManager } from './memory/system'
 import orchestratorAgentMd from '../../agents/orchestrator.md?raw'
 import browserAgentMd from '../../agents/browser-agent.md?raw'
 import searchAgentMd from '../../agents/search-agent.md?raw'
@@ -21,6 +23,8 @@ let skillRegistry: SkillRegistry
 let agentRegistry: AgentRegistry
 let episodicMemory: EpisodicMemory
 let knowledgeStore: KnowledgeStore
+let sessionMemory: SessionMemoryManager
+let systemMemory: SystemMemoryManager
 let orchestrator: Orchestrator
 let initPromise: Promise<void> | null = null
 
@@ -49,11 +53,14 @@ async function doInit() {
   agentRegistry = new AgentRegistry()
   episodicMemory = new EpisodicMemory()
   knowledgeStore = new KnowledgeStore()
+  sessionMemory = new SessionMemoryManager()
+  systemMemory = new SystemMemoryManager()
   await Promise.all([
     skillRegistry.init(),
     agentRegistry.init(),
     episodicMemory.init(),
     knowledgeStore.init(),
+    systemMemory.load(),
   ])
   orchestrator = new Orchestrator({
     getApiKey: async (provider) => {
@@ -152,6 +159,8 @@ async function doInit() {
       const all = await skillRegistry.list()
       return all.filter(s => names.includes(s.name))
     },
+    sessionMemory,
+    systemMemory,
   })
 }
 
@@ -168,12 +177,34 @@ chrome.runtime.onInstalled.addListener(async () => {
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
   await init()
   await seedBuiltins()
+  triggerSystemMemoryBuild()
 })
-chrome.runtime.onStartup.addListener(() => { init() })
+chrome.runtime.onStartup.addListener(() => {
+  init().then(() => triggerSystemMemoryBuild())
+})
+
+function triggerSystemMemoryBuild() {
+  const config = chrome.storage.local.get('config').then(r => r.config ?? { defaultModel: 'claude-opus-4-7' }) as Promise<{ defaultModel: string }>
+  config.then(async (cfg) => {
+    const provider = cfg.defaultModel?.toLowerCase().startsWith('deepseek') ? 'deepseek'
+      : cfg.defaultModel?.toLowerCase().startsWith('gpt') ? 'openai'
+      : cfg.defaultModel?.toLowerCase().startsWith('gemini') ? 'gemini'
+      : 'claude'
+    const result = await chrome.storage.local.get(`apiKey_${provider}`)
+    const key = (result[`apiKey_${provider}`] as string) ?? ''
+    if (!key) return
+    const { getLLMClient } = await import('./llm/client')
+    const client = getLLMClient(provider, { apiKey: key, model: cfg.defaultModel })
+    systemMemory.buildIfStale(client).catch(() => {})
+  }).catch(() => {})
+}
 
 // Keep service worker alive during active tasks (alarms fire every ~24s)
 chrome.alarms.create('keepalive', { periodInMinutes: 0.4 })
-chrome.alarms.onAlarm.addListener((_alarm) => { /* ping to prevent termination */ })
+chrome.alarms.create('rebuild-system-memory', { periodInMinutes: 1440 })
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'rebuild-system-memory') triggerSystemMemoryBuild()
+})
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
@@ -218,6 +249,10 @@ async function handleMessage(message: { type: MessageType; requestId: string; pa
     case MessageType.DELETE_KNOWLEDGE:
       await knowledgeStore.delete((payload as { key: string }).key)
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
+    case MessageType.GET_SESSION_MEMORY:
+      return { type: MessageType.RESPONSE, requestId, payload: sessionMemory.get() ?? null }
+    case MessageType.GET_SYSTEM_MEMORY:
+      return { type: MessageType.RESPONSE, requestId, payload: systemMemory.get() ?? null }
     case MessageType.GET_HISTORY: {
       const result = await chrome.storage.local.get('conversationHistory')
       return { type: MessageType.RESPONSE, requestId, payload: result.conversationHistory ?? [] }

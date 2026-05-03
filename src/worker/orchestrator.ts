@@ -2,6 +2,8 @@ import type { AgentDef, GlobalConfig, LLMMessage, SkillDef, Tool } from '@shared
 import { AgentRuntime } from './agent-runtime'
 import type { RunResult } from './agent-runtime'
 import { getLLMClient } from './llm/client'
+import type { SessionMemoryManager } from './memory/session'
+import type { SystemMemoryManager } from './memory/system'
 
 interface OrchestratorOptions {
   getApiKey: (provider: string) => Promise<string>
@@ -11,6 +13,8 @@ interface OrchestratorOptions {
   listSkills: (names: string[]) => Promise<SkillDef[]>
   loadHistory: () => Promise<LLMMessage[]>
   saveHistory: (history: LLMMessage[]) => Promise<void>
+  sessionMemory: SessionMemoryManager
+  systemMemory: SystemMemoryManager
 }
 
 const MAX_HISTORY = 100
@@ -34,6 +38,16 @@ function buildTools(skillDefs: SkillDef[]): Tool[] {
   }))
 }
 
+function buildMemoryContext(sys: SystemMemoryManager, sess: SessionMemoryManager): string {
+  const parts = [sys.getContextString(), sess.getContextString()].filter(Boolean)
+  return parts.length ? '\n\n## Memory Context\n' + parts.join('\n\n') : ''
+}
+
+function withMemory(agent: AgentDef, memoryContext: string): AgentDef {
+  if (!memoryContext) return agent
+  return { ...agent, systemPrompt: agent.systemPrompt + memoryContext }
+}
+
 export class Orchestrator {
   private options: OrchestratorOptions
   private history: LLMMessage[] | null = null
@@ -43,7 +57,7 @@ export class Orchestrator {
   }
 
   async handleUserMessage(taskId: string, message: string): Promise<RunResult> {
-    const { getApiKey, getConfig, executeToolCall, listAgents, listSkills } = this.options
+    const { getApiKey, getConfig, executeToolCall, listAgents, listSkills, sessionMemory, systemMemory } = this.options
 
     if (this.history === null) {
       this.history = await this.options.loadHistory()
@@ -57,6 +71,9 @@ export class Orchestrator {
     const provider = detectProvider(orchestratorAgent.llm)
     const apiKey = await getApiKey(provider)
     const client = getLLMClient(provider, { apiKey, model: orchestratorAgent.llm })
+
+    const memoryContext = buildMemoryContext(systemMemory, sessionMemory)
+    const agentWithMemory = withMemory(orchestratorAgent, memoryContext)
 
     const skillDefs = await listSkills(orchestratorAgent.skills)
     const tools: Tool[] = buildTools(skillDefs)
@@ -77,13 +94,13 @@ export class Orchestrator {
     const wrappedExecuteToolCall = async (toolName: string, params: Record<string, unknown>): Promise<unknown> => {
       if (toolName === 'agent_call') {
         const { agent_name, task } = params as { agent_name: string; task: string }
-        return self.runSubAgent(agent_name, task, allAgents, config)
+        return self.runSubAgent(agent_name, task, allAgents, config, memoryContext)
       }
       return executeToolCall(toolName, params)
     }
 
     const runtime = new AgentRuntime({
-      agent: orchestratorAgent,
+      agent: agentWithMemory,
       client,
       executeToolCall: wrappedExecuteToolCall,
       maxToolCalls: config.maxToolCallsPerTask,
@@ -98,6 +115,9 @@ export class Orchestrator {
     }
     await this.options.saveHistory(this.history)
 
+    // Fire-and-forget: update session memory without blocking
+    sessionMemory.infer(this.history, client).catch(() => {})
+
     return result
   }
 
@@ -106,6 +126,7 @@ export class Orchestrator {
     task: string,
     allAgents: AgentDef[],
     config: GlobalConfig,
+    memoryContext: string,
   ): Promise<string> {
     const subAgent = allAgents.find(a => a.name === agentName)
     if (!subAgent) throw new Error(`Sub-agent not found: "${agentName}". Available: ${allAgents.slice(1).map(a => a.name).join(', ')}`)
@@ -118,7 +139,7 @@ export class Orchestrator {
     const tools = buildTools(skillDefs)
 
     const runtime = new AgentRuntime({
-      agent: subAgent,
+      agent: withMemory(subAgent, memoryContext),
       client,
       executeToolCall: this.options.executeToolCall,
       maxToolCalls: config.maxToolCallsPerTask,
@@ -130,6 +151,7 @@ export class Orchestrator {
 
   clearHistory(): void {
     this.history = []
+    this.options.sessionMemory.clear()
     this.options.saveHistory([])
   }
 
