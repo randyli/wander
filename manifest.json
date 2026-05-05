@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Multi-Agent Framework",
+  "name": "Wander",
   "version": "0.1.0",
-  "description": "Chrome extension multi-agent framework",
+  "description": "AI-powered browsing companion",
   "permissions": ["activeTab", "scripting", "storage", "alarms", "sidePanel", "tabs", "history", "bookmarks"],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -19,6 +19,6 @@
     "default_path": "src/sidepanel/sidepanel.html"
   },
   "action": {
-    "default_title": "Open Agent Panel"
+    "default_title": "Open Wander"
   }
 }
