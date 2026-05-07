@@ -7,7 +7,7 @@ export function parseAgentMarkdown(markdown: string): AgentDef {
     name: String(data.name),
     description: String(data.description ?? ''),
     skills: Array.isArray(data.skills) ? data.skills.map(String) : [],
-    llm: String(data.llm ?? 'claude-opus-4-7'),
+    llm: String(data.llm ?? ''),
     systemPrompt: content.trim(),
   }
 }

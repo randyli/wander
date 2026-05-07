@@ -9,7 +9,6 @@ skills:
   - fill-form
   - take-screenshot
   - read-history
-llm: qwen:qwen3.6-plus
 ---
 
 You are a browser automation agent. Execute browser tasks step by step using the available tools.

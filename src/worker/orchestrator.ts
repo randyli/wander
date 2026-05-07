@@ -139,7 +139,7 @@ export class Orchestrator {
     const subAgent = allAgents.find(a => a.name === agentName)
     if (!subAgent) throw new Error(`Sub-agent not found: "${agentName}". Available: ${allAgents.slice(1).map(a => a.name).join(', ')}`)
 
-    const { provider, model } = parseAgentLlm(subAgent.llm)
+    const { provider, model } = subAgent.llm ? parseAgentLlm(subAgent.llm) : { provider: config.defaultProvider, model: config.defaultModel }
     const apiKey = await this.options.getApiKey(provider)
     const client = getLLMClient(provider, { apiKey, model })
 
