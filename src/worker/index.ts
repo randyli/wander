@@ -1,5 +1,6 @@
 import { MessageType } from '@shared/messages'
-import type { GlobalConfig, LLMMessage } from '@shared/types'
+import type { LLMMessage, ProviderConfig, GeneralSettingsConfig } from '@shared/types'
+import { llmProviderStore, generalSettingsStore } from '../storage'
 import { Orchestrator } from './orchestrator'
 import { SkillRegistry } from './skill-registry'
 import { AgentRegistry } from './agent-registry'
@@ -64,18 +65,18 @@ async function doInit() {
   ])
   orchestrator = new Orchestrator({
     getApiKey: async (provider) => {
-      const result = await chrome.storage.local.get(`apiKey_${provider}`)
-      const key = (result[`apiKey_${provider}`] as string) ?? ''
+      const config = await llmProviderStore.getProvider(provider)
+      const key = config?.apiKey ?? ''
       if (!key) throw new Error(`No API key set for ${provider}. Please add it in Settings.`)
       return key
     },
     getConfig: async () => {
-      const result = await chrome.storage.local.get('config')
-      return (result.config as GlobalConfig) ?? {
-        defaultProvider: 'claude',
-        defaultModel: 'claude-opus-4-7',
-        maxToolCallsPerTask: 20,
-        maxEpisodes: 100,
+      const settings = await generalSettingsStore.getSettings()
+      return {
+        defaultProvider: settings.defaultProvider,
+        defaultModel: settings.defaultModel,
+        maxToolCallsPerTask: settings.maxToolCallsPerTask,
+        maxEpisodes: settings.maxEpisodes,
       }
     },
     loadHistory: async () => {
@@ -184,17 +185,17 @@ chrome.runtime.onStartup.addListener(() => {
 })
 
 function triggerSystemMemoryBuild() {
-  const config = chrome.storage.local.get('config').then(r => r.config ?? { defaultModel: 'claude-opus-4-7' }) as Promise<{ defaultModel: string }>
-  config.then(async (cfg) => {
-    const provider = cfg.defaultModel?.toLowerCase().startsWith('deepseek') ? 'deepseek'
-      : cfg.defaultModel?.toLowerCase().startsWith('gpt') ? 'openai'
-      : cfg.defaultModel?.toLowerCase().startsWith('gemini') ? 'gemini'
+  generalSettingsStore.getSettings().then(async (settings) => {
+    const provider = settings.defaultModel.toLowerCase().startsWith('gpt') ? 'openai'
+      : settings.defaultModel.toLowerCase().startsWith('gemini') ? 'gemini'
+      : settings.defaultModel.toLowerCase().startsWith('deepseek') ? 'deepseek'
+      : settings.defaultModel.toLowerCase().startsWith('qwen') ? 'qwen'
       : 'claude'
-    const result = await chrome.storage.local.get(`apiKey_${provider}`)
-    const key = (result[`apiKey_${provider}`] as string) ?? ''
+    const config = await llmProviderStore.getProvider(provider)
+    const key = config?.apiKey ?? ''
     if (!key) return
     const { getLLMClient } = await import('./llm/client')
-    const client = getLLMClient(provider, { apiKey: key, model: cfg.defaultModel })
+    const client = getLLMClient(provider, { apiKey: key, model: settings.defaultModel })
     systemMemory.buildIfStale(client).catch(() => {})
   }).catch(() => {})
 }
@@ -260,18 +261,26 @@ async function handleMessage(message: { type: MessageType; requestId: string; pa
     case MessageType.CLEAR_HISTORY:
       orchestrator.clearHistory()
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
-    case MessageType.GET_CONFIG: {
-      const result = await chrome.storage.local.get('config')
-      return { type: MessageType.RESPONSE, requestId, payload: result.config ?? {} }
-    }
-    case MessageType.SET_CONFIG:
-      await chrome.storage.local.set({ config: (payload as { config: GlobalConfig }).config })
-      return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
-    case MessageType.SET_API_KEY: {
-      const { provider, key } = payload as { provider: string; key: string }
-      await chrome.storage.local.set({ [`apiKey_${provider}`]: key })
+    case MessageType.GET_PROVIDERS:
+      return { type: MessageType.RESPONSE, requestId, payload: await llmProviderStore.getAllProviders() }
+    case MessageType.SET_PROVIDER: {
+      const { providerId, config } = payload as { providerId: string; config: ProviderConfig }
+      await llmProviderStore.setProvider(providerId, config)
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
     }
+    case MessageType.REMOVE_PROVIDER: {
+      const { providerId } = payload as { providerId: string }
+      await llmProviderStore.removeProvider(providerId)
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
+    }
+    case MessageType.GET_GENERAL_SETTINGS:
+      return { type: MessageType.RESPONSE, requestId, payload: await generalSettingsStore.getSettings() }
+    case MessageType.UPDATE_GENERAL_SETTINGS:
+      await generalSettingsStore.updateSettings(payload as Partial<GeneralSettingsConfig>)
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
+    case MessageType.RESET_GENERAL_SETTINGS:
+      await generalSettingsStore.resetToDefaults()
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
     default:
       throw new Error(`Unhandled message type: ${type}`)
   }

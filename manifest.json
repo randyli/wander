@@ -20,5 +20,11 @@
   },
   "action": {
     "default_title": "Open Wander"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["src/settings/settings.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

@@ -7,6 +7,13 @@ import manifest from './manifest.json'
 export default defineConfig({
   plugins: [react(), crx({ manifest }), nodePolyfills()],
   resolve: {
-    alias: { '@shared': '/src/shared' },
+    alias: { '@shared': '/src/shared', '@storage': '/src/storage' },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        settings: 'src/settings/settings.html',
+      },
+    },
   },
 })

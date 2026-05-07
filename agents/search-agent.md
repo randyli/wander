@@ -6,7 +6,7 @@ skills:
   - navigate
   - read-page
   - memory-write
-llm: deepseek-chat
+llm: qwen:qwen3.6-plus
 ---
 
 You are a search and summarization agent. Your job is to search for information online and return a clear, structured summary.

@@ -5,7 +5,7 @@ description: Master orchestrator that routes tasks to specialized sub-agents
 skills:
   - memory-read
   - memory-write
-llm: deepseek-chat
+llm: qwen:qwen3.6-plus
 ---
 
 You are a master orchestrator. Your job is to understand the user's request and delegate it to the appropriate sub-agent using the `agent_call` tool.

@@ -1,4 +1,4 @@
-import type { AgentDef, GlobalConfig, LLMMessage, SkillDef, Tool } from '@shared/types'
+import type { AgentDef, GeneralSettingsConfig, LLMMessage, SkillDef, Tool } from '@shared/types'
 import { AgentRuntime } from './agent-runtime'
 import type { RunResult } from './agent-runtime'
 import { getLLMClient } from './llm/client'
@@ -7,7 +7,7 @@ import type { SystemMemoryManager } from './memory/system'
 
 interface OrchestratorOptions {
   getApiKey: (provider: string) => Promise<string>
-  getConfig: () => Promise<GlobalConfig>
+  getConfig: () => Promise<GeneralSettingsConfig>
   executeToolCall: (tool: string, params: Record<string, unknown>) => Promise<unknown>
   listAgents: () => Promise<AgentDef[]>
   listSkills: (names: string[]) => Promise<SkillDef[]>
@@ -26,6 +26,14 @@ function detectProvider(model: string): string {
   if (m.startsWith('deepseek')) return 'deepseek'
   if (m.startsWith('qwen')) return 'qwen'
   return 'claude'
+}
+
+function parseAgentLlm(llm: string): { provider: string; model: string } {
+  if (llm.includes(':')) {
+    const [provider, model] = llm.split(':')
+    return { provider, model }
+  }
+  return { provider: detectProvider(llm), model: llm }
 }
 
 function buildTools(skillDefs: SkillDef[]): Tool[] {
@@ -68,9 +76,9 @@ export class Orchestrator {
     const orchestratorAgent = allAgents[0] ?? this.defaultAgent(config)
     const subAgents = allAgents.slice(1)
 
-    const provider = detectProvider(orchestratorAgent.llm)
+    const provider = config.defaultProvider || detectProvider(config.defaultModel)
     const apiKey = await getApiKey(provider)
-    const client = getLLMClient(provider, { apiKey, model: orchestratorAgent.llm })
+    const client = getLLMClient(provider, { apiKey, model: config.defaultModel })
 
     const memoryContext = buildMemoryContext(systemMemory, sessionMemory)
     const agentWithMemory = withMemory(orchestratorAgent, memoryContext)
@@ -125,15 +133,15 @@ export class Orchestrator {
     agentName: string,
     task: string,
     allAgents: AgentDef[],
-    config: GlobalConfig,
+    config: GeneralSettingsConfig,
     memoryContext: string,
   ): Promise<string> {
     const subAgent = allAgents.find(a => a.name === agentName)
     if (!subAgent) throw new Error(`Sub-agent not found: "${agentName}". Available: ${allAgents.slice(1).map(a => a.name).join(', ')}`)
 
-    const provider = detectProvider(subAgent.llm)
+    const { provider, model } = parseAgentLlm(subAgent.llm)
     const apiKey = await this.options.getApiKey(provider)
-    const client = getLLMClient(provider, { apiKey, model: subAgent.llm })
+    const client = getLLMClient(provider, { apiKey, model })
 
     const skillDefs = await this.options.listSkills(subAgent.skills)
     const tools = buildTools(skillDefs)

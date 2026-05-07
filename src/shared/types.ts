@@ -1,4 +1,3 @@
-export type LLMProvider = 'claude' | 'openai' | 'gemini' | 'deepseek' | 'qwen'
 export type Role = 'system' | 'user' | 'assistant' | 'tool'
 
 export interface LLMMessage {
@@ -71,8 +70,16 @@ export interface KnowledgeEntry {
   updatedAt: number
 }
 
-export interface GlobalConfig {
-  defaultProvider: LLMProvider
+export interface ProviderConfig {
+  name?: string
+  apiKey: string
+  baseUrl?: string
+  modelNames: string[]
+  enabled: boolean
+}
+
+export interface GeneralSettingsConfig {
+  defaultProvider: string
   defaultModel: string
   maxToolCallsPerTask: number
   maxEpisodes: number

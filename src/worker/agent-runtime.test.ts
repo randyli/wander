@@ -24,7 +24,7 @@ describe('AgentRuntime', () => {
       executeToolCall: vi.fn(),
       maxToolCalls: 10,
     })
-    expect(await runtime.run('Do a task', 'task-1')).toBe('Task complete')
+    expect((await runtime.run('Do a task', 'task-1')).content).toBe('Task complete')
   })
 
   it('executes tool calls then continues', async () => {
@@ -40,7 +40,7 @@ describe('AgentRuntime', () => {
     })
     const result = await runtime.run('Read page', 'task-2')
     expect(executeToolCall).toHaveBeenCalledWith('dom.getText', {})
-    expect(result).toBe('Found: page text')
+    expect(result.content).toBe('Found: page text')
   })
 
   it('throws when max tool calls exceeded', async () => {

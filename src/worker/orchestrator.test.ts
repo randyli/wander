@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Orchestrator } from './orchestrator'
-import type { AgentDef, GlobalConfig } from '@shared/types'
+import type { AgentDef, GeneralSettingsConfig } from '@shared/types'
 
 const mockAgent: AgentDef = {
   name: 'researcher',
@@ -10,7 +10,7 @@ const mockAgent: AgentDef = {
   systemPrompt: 'You research pages.',
 }
 
-const mockConfig: GlobalConfig = {
+const mockConfig: GeneralSettingsConfig = {
   defaultProvider: 'claude',
   defaultModel: 'claude-opus-4-7',
   maxToolCallsPerTask: 20,
@@ -19,7 +19,7 @@ const mockConfig: GlobalConfig = {
 
 vi.mock('./agent-runtime', () => ({
   AgentRuntime: vi.fn().mockImplementation(() => ({
-    run: vi.fn().mockResolvedValue('Research complete'),
+    run: vi.fn().mockResolvedValue({ content: 'Research complete', thinking: '' }),
   })),
 }))
 
@@ -35,9 +35,13 @@ describe('Orchestrator', () => {
       executeToolCall: vi.fn(),
       listAgents: vi.fn().mockResolvedValue([mockAgent]),
       listSkills: vi.fn().mockResolvedValue([]),
+      loadHistory: vi.fn().mockResolvedValue([]),
+      saveHistory: vi.fn(),
+      sessionMemory: { infer: vi.fn().mockResolvedValue(undefined), get: vi.fn(), getContextString: vi.fn(), clear: vi.fn() } as any,
+      systemMemory: { get: vi.fn(), getContextString: vi.fn(), load: vi.fn(), set: vi.fn() } as any,
     })
     const result = await orchestrator.handleUserMessage('task-1', 'Research this')
-    expect(result).toBe('Research complete')
+    expect(result.content).toBe('Research complete')
   })
 
   it('falls back to default agent when none registered', async () => {
@@ -47,8 +51,12 @@ describe('Orchestrator', () => {
       executeToolCall: vi.fn(),
       listAgents: vi.fn().mockResolvedValue([]),
       listSkills: vi.fn().mockResolvedValue([]),
+      loadHistory: vi.fn().mockResolvedValue([]),
+      saveHistory: vi.fn(),
+      sessionMemory: { infer: vi.fn().mockResolvedValue(undefined), get: vi.fn(), getContextString: vi.fn(), clear: vi.fn() } as any,
+      systemMemory: { get: vi.fn(), getContextString: vi.fn(), load: vi.fn(), set: vi.fn() } as any,
     })
     const result = await orchestrator.handleUserMessage('task-2', 'Hello')
-    expect(typeof result).toBe('string')
+    expect(result.content).toBeDefined()
   })
 })
