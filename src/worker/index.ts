@@ -11,6 +11,7 @@ import { SystemMemoryManager } from './memory/system'
 import orchestratorAgentMd from '../../agents/orchestrator.md?raw'
 import browserAgentMd from '../../agents/browser-agent.md?raw'
 import searchAgentMd from '../../agents/search-agent.md?raw'
+import jobHunterMd from '../../agents/job-hunter.md?raw'
 import readPageMd from '../../skills/read-page.md?raw'
 import takeScreenshotMd from '../../skills/take-screenshot.md?raw'
 import navigateMd from '../../skills/navigate.md?raw'
@@ -172,6 +173,7 @@ async function seedBuiltins() {
   await agentRegistry.install(orchestratorAgentMd)
   await agentRegistry.install(browserAgentMd)
   await agentRegistry.install(searchAgentMd)
+  await agentRegistry.install(jobHunterMd)
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
