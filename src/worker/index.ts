@@ -8,6 +8,7 @@ import { EpisodicMemory } from './memory/episodic'
 import { KnowledgeStore } from './memory/knowledge'
 import { SessionMemoryManager } from './memory/session'
 import { SystemMemoryManager } from './memory/system'
+import { WorkingMemoryManager } from './memory/working'
 import orchestratorAgentMd from '../../agents/orchestrator.md?raw'
 import browserAgentMd from '../../agents/browser-agent.md?raw'
 import searchAgentMd from '../../agents/search-agent.md?raw'
@@ -27,6 +28,7 @@ let episodicMemory: EpisodicMemory
 let knowledgeStore: KnowledgeStore
 let sessionMemory: SessionMemoryManager
 let systemMemory: SystemMemoryManager
+let workingMemory: WorkingMemoryManager
 let orchestrator: Orchestrator
 let initPromise: Promise<void> | null = null
 
@@ -57,6 +59,7 @@ async function doInit() {
   knowledgeStore = new KnowledgeStore()
   sessionMemory = new SessionMemoryManager()
   systemMemory = new SystemMemoryManager()
+  workingMemory = new WorkingMemoryManager()
   await Promise.all([
     skillRegistry.init(),
     agentRegistry.init(),
@@ -105,7 +108,12 @@ async function doInit() {
         const entry = await knowledgeStore.get(key)
         return entry ? entry.value : null
       }
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      let [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      // If the active tab is on a restricted URL, find another usable tab
+      if (tab?.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://'))) {
+        const tabs = await chrome.tabs.query({ currentWindow: true })
+        tab = tabs.find(t => t.url && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-extension://')) ?? tab
+      }
       if (!tab?.id) throw new Error('No active tab')
       if (tool === 'page.screenshot') {
         return chrome.tabs.captureVisibleTab({ format: 'png' })
@@ -123,7 +131,8 @@ async function doInit() {
             if (tabId === tab.id && info.status === 'complete') {
               clearTimeout(timer)
               chrome.tabs.onUpdated.removeListener(listener)
-              resolve()
+              // Give JS-rendered content extra time to load
+              setTimeout(resolve, 2000)
             }
           }
           chrome.tabs.onUpdated.addListener(listener)
@@ -141,6 +150,9 @@ async function doInit() {
       if (tool === 'nav.forward') {
         await chrome.tabs.goForward(tab.id)
         return { ok: true }
+      }
+      if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://'))) {
+        throw new Error('Cannot execute tools on this page. Switch to a normal webpage first.')
       }
       const msg = {
         type: MessageType.TOOL_CALL,
@@ -163,6 +175,9 @@ async function doInit() {
     },
     sessionMemory,
     systemMemory,
+    workingMemory,
+    episodicMemory,
+    knowledgeStore,
   })
 }
 
@@ -183,7 +198,10 @@ chrome.runtime.onInstalled.addListener(async () => {
   triggerSystemMemoryBuild()
 })
 chrome.runtime.onStartup.addListener(() => {
-  init().then(() => triggerSystemMemoryBuild())
+  init().then(() => {
+    triggerSystemMemoryBuild()
+    generalSettingsStore.getSettings().then(s => episodicMemory.evict(s.maxEpisodes).catch(() => {}))
+  })
 })
 
 function triggerSystemMemoryBuild() {

@@ -3,6 +3,7 @@ name: job-hunter
 type: agent
 description: Searches multiple remote job boards and saves relevant listings based on user profile
 skills:
+  - navigate
   - read-page
   - click
   - memory-write
@@ -32,5 +33,13 @@ If none of these exist, ask the user once for their target role and key skills, 
 3. Himalayas: `https://himalayas.app/jobs?q=QUERY`
 
 **Output**: Present a structured table of found jobs — title | company | salary | timezone | URL.
+
+**Pacing**: Each `nav.goto` may trigger anti-bot detection on job boards. Navigate at a human pace — one board, read, then pause before the next. Avoid rapid-fire navigations.
+
+**Verification detection**: If `dom_getText` returns content containing "captcha", "verify you are human", "Cloudflare", "blocked", "403", "Access Denied", or shows a mostly-empty page with just a login/sign-in prompt, immediately stop browsing that site. Move on to the next board. If all boards fail, report: "⚠️ 这些招聘网站全部触发了人机验证，请手动打开一个招聘网站完成验证后告诉我继续。"
+
+**Empty page handling**: If `dom_getText` returns fewer than 100 characters of useful job content (not counting boilerplate text), the page likely requires JavaScript that hasn't loaded. Try one more keyword on the same board, then move on. Do not retry the same board more than 3 times total.
+
+**Tool budget**: You have a limited number of tool calls. Prioritize: 1-2 keyword variants per board × 3 boards = maximum 9 `nav.goto` calls. Stop searching after you've collected at least 3 good matches. Quality over quantity.
 
 **CRITICAL**: Never claim to have performed an action unless you actually called a tool.

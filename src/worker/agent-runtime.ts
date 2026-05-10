@@ -1,5 +1,6 @@
 import type { AgentDef, LLMMessage, Tool } from '@shared/types'
 import type { LLMClient } from './llm/client'
+import type { WorkingMemoryManager } from './memory/working'
 
 interface AgentRuntimeOptions {
   agent: AgentDef
@@ -7,6 +8,7 @@ interface AgentRuntimeOptions {
   executeToolCall: (tool: string, params: Record<string, unknown>) => Promise<unknown>
   maxToolCalls: number
   tools?: Tool[]
+  workingMemory?: WorkingMemoryManager
 }
 
 export interface RunResult {
@@ -56,12 +58,16 @@ export class AgentRuntime {
         rawToolCalls: (response.rawAssistantMessage as { tool_calls?: unknown })?.tool_calls,
       })
 
+      const wm = this.options.workingMemory
+      wm?.appendMessage(_taskId, { role: 'assistant', content: response.content })
+
       for (const toolCall of response.toolCalls) {
         if (toolCallCount >= maxToolCalls) {
           throw new Error(`Max tool calls (${maxToolCalls}) exceeded`)
         }
         toolCallCount++
         const result = await executeToolCall(toolCall.name, toolCall.params)
+        wm?.logToolCall(_taskId, toolCall.name, toolCall.params, result)
         const payload = (result as { payload?: { result?: unknown; error?: string } })?.payload
         const unwrapped = payload?.error ? `Error: ${payload.error}` : (payload?.result ?? result)
         const raw = typeof unwrapped === 'string' ? unwrapped : JSON.stringify(unwrapped)

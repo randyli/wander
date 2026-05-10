@@ -51,4 +51,17 @@ export class EpisodicMemory {
       req.onerror = () => reject(req.error)
     })
   }
+
+  async getRecent(count: number): Promise<Episode[]> {
+    const all = await this.list()
+    return all.sort((a, b) => b.createdAt - a.createdAt).slice(0, count)
+  }
+
+  async evict(max: number): Promise<void> {
+    const all = await this.list()
+    if (all.length <= max) return
+    const sorted = all.sort((a, b) => a.createdAt - b.createdAt)
+    const toDelete = sorted.slice(0, all.length - max)
+    await Promise.all(toDelete.map(e => this.delete(e.id)))
+  }
 }

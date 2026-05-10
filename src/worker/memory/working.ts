@@ -13,13 +13,13 @@ export class WorkingMemoryManager {
 
   appendMessage(taskId: string, message: LLMMessage): void {
     const ctx = this.store.get(taskId)
-    if (!ctx) throw new Error(`No working memory for task: ${taskId}`)
+    if (!ctx) return
     ctx.messages.push(message)
   }
 
   logToolCall(taskId: string, tool: string, params: unknown, result: unknown): void {
     const ctx = this.store.get(taskId)
-    if (!ctx) throw new Error(`No working memory for task: ${taskId}`)
+    if (!ctx) return
     ctx.toolCallLog.push({ tool, params, result, ts: Date.now() })
   }
 
