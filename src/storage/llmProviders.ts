@@ -2,6 +2,7 @@ import { createStorage } from './base'
 import type { BaseStorage } from './base'
 
 export interface ProviderConfig {
+  name?: string
   apiKey: string
   baseUrl?: string
   modelNames: string[]

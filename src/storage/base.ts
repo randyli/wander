@@ -5,7 +5,7 @@ export interface BaseStorage<D> {
   getSnapshot: () => D | null
 }
 
-export interface CreateStorageConfig<D> {
+export interface CreateStorageConfig {
   liveUpdate?: boolean
 }
 
@@ -16,10 +16,10 @@ function updateCache<D>(valueOrUpdate: D | ((prev: D) => D), cache: D | null): D
   return valueOrUpdate
 }
 
-export function createStorage<D>(key: string, fallback: D, config?: CreateStorageConfig<D>): BaseStorage<D> {
+export function createStorage<D>(key: string, fallback: D, config?: CreateStorageConfig): BaseStorage<D> {
   let cache: D | null = null
   let inited = false
-  let listeners: Array<() => void> = []
+  let listeners: Array<(value: D) => void> = []
   const liveUpdate = config?.liveUpdate ?? false
 
   const get = async (): Promise<D> => {
@@ -27,8 +27,8 @@ export function createStorage<D>(key: string, fallback: D, config?: CreateStorag
     return (result[key] as D) ?? fallback
   }
 
-  const emitChange = () => {
-    listeners.forEach(fn => fn())
+  const emitChange = (value: D) => {
+    listeners.forEach(fn => fn(value))
   }
 
   const set = async (valueOrUpdate: D | ((prev: D) => D)) => {
@@ -38,10 +38,10 @@ export function createStorage<D>(key: string, fallback: D, config?: CreateStorag
     }
     cache = updateCache(valueOrUpdate, cache)
     await chrome.storage.local.set({ [key]: cache })
-    emitChange()
+    emitChange(cache)
   }
 
-  const subscribe = (listener: () => void) => {
+  const subscribe = (listener: (value: D) => void) => {
     listeners = [...listeners, listener]
     return () => {
       listeners = listeners.filter(l => l !== listener)
@@ -54,7 +54,7 @@ export function createStorage<D>(key: string, fallback: D, config?: CreateStorag
   get().then(data => {
     cache = data
     inited = true
-    emitChange()
+    emitChange(cache)
   })
 
   // Listen for live updates
@@ -64,7 +64,7 @@ export function createStorage<D>(key: string, fallback: D, config?: CreateStorag
       const newValue = changes[key].newValue as D
       if (cache === newValue) return
       cache = newValue
-      emitChange()
+      emitChange(cache)
     })
   }
 

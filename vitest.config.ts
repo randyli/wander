@@ -5,7 +5,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['src/test-setup.ts'],
-    coverage: { provider: 'v8' },
+    coverage: { provider: 'v8', include: ['src/**/*.{ts,tsx}'] },
   },
   resolve: {
     alias: { '@shared': '/src/shared' },
