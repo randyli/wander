@@ -1,3 +1,4 @@
+import type { TaskEventPayload } from '@shared/messages'
 import type { AgentDef, GeneralSettingsConfig, LLMMessage, SkillDef, Tool } from '@shared/types'
 import { getToolRisk } from './tool-approval'
 import { AgentRuntime } from './agent-runtime'
@@ -22,9 +23,16 @@ interface OrchestratorOptions {
   workingMemory: WorkingMemoryManager
   episodicMemory: EpisodicMemory
   knowledgeStore: KnowledgeStore
+  emitTaskEvent?: (event: TaskEventPayload) => void
 }
 
 const MAX_HISTORY = 100
+
+function summarizeValue(value: unknown, maxLength = 600): string {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value)
+  if (!raw) return ''
+  return raw.length > maxLength ? `${raw.slice(0, maxLength)}… [truncated ${raw.length - maxLength} chars]` : raw
+}
 
 function detectProvider(model: string): string {
   const m = model.toLowerCase()
@@ -137,6 +145,13 @@ export class Orchestrator {
     }
 
     workingMemory.init(taskId)
+    this.options.emitTaskEvent?.({
+      taskId,
+      agentName: 'user',
+      eventType: 'user_message',
+      status: 'success',
+      summary: summarizeValue(message),
+    })
 
     const config = await getConfig()
     const allAgents = await listAgents()
@@ -174,7 +189,39 @@ export class Orchestrator {
     const wrappedExecuteToolCall = async (toolName: string, params: Record<string, unknown>): Promise<unknown> => {
       if (toolName === 'agent_call') {
         const { agent_name, task } = params as { agent_name: string; task: string }
-        return self.runSubAgent(agent_name, task, allAgents, config, memoryContext)
+        self.options.emitTaskEvent?.({
+          taskId,
+          agentName: agent_name,
+          eventType: 'subagent_start',
+          toolName,
+          params,
+          status: 'running',
+          summary: summarizeValue(task),
+        })
+        try {
+          const result = await self.runSubAgent(agent_name, task, allAgents, config, memoryContext, taskId)
+          self.options.emitTaskEvent?.({
+            taskId,
+            agentName: agent_name,
+            eventType: 'subagent_complete',
+            toolName,
+            params,
+            status: 'success',
+            summary: summarizeValue(result),
+          })
+          return result
+        } catch (err) {
+          self.options.emitTaskEvent?.({
+            taskId,
+            agentName: agent_name,
+            eventType: 'subagent_error',
+            toolName,
+            params,
+            status: 'error',
+            summary: err instanceof Error ? err.message : String(err),
+          })
+          throw err
+        }
       }
       return executeToolCall(toolName, params)
     }
@@ -186,6 +233,7 @@ export class Orchestrator {
       maxToolCalls: config.maxToolCallsPerTask,
       tools,
       workingMemory,
+      emitTaskEvent: this.options.emitTaskEvent,
     })
     const result = await runtime.run(message, taskId, this.history)
 
@@ -215,6 +263,7 @@ export class Orchestrator {
     allAgents: AgentDef[],
     config: GeneralSettingsConfig,
     _memoryContext: string,
+    parentTaskId?: string,
   ): Promise<string> {
     const subAgent = allAgents.find(a => a.name === agentName)
     if (!subAgent) throw new Error(`Sub-agent not found: "${agentName}". Available: ${allAgents.slice(1).map(a => a.name).join(', ')}`)
@@ -242,6 +291,7 @@ export class Orchestrator {
       maxToolCalls: config.maxToolCallsPerTask,
       tools,
       workingMemory: this.options.workingMemory,
+      emitTaskEvent: event => this.options.emitTaskEvent?.({ ...event, taskId: parentTaskId ?? event.taskId }),
     })
     const result = await runtime.run(task, subTaskId)
     this.options.workingMemory.clear(subTaskId)

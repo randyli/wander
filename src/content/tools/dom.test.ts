@@ -14,6 +14,11 @@ describe('domGetText', () => {
     expect(domGetText({ selector: '.content' })).toBe('Hello world')
   })
 
+  it('supports :has-text text matching in selectors', () => {
+    document.body.innerHTML = '<main><a href="/question/1">为什么2026年教育突然松绑了</a><a href="/question/2">Other</a></main>'
+    expect(domGetText({ selector: 'a[href*="question"]:has-text("为什么2026年教育突然松绑了")' })).toBe('为什么2026年教育突然松绑了')
+  })
+
   it('throws when selector not found', () => {
     expect(() => domGetText({ selector: '#missing' })).toThrow('Element not found')
   })
@@ -35,6 +40,14 @@ describe('domClick', () => {
     document.body.innerHTML = '<button id="btn">Click</button>'
     document.getElementById('btn')!.addEventListener('click', () => { clicked = true })
     domClick({ selector: '#btn' })
+    expect(clicked).toBe(true)
+  })
+
+  it('clicks an element selected with :has-text', () => {
+    let clicked = false
+    document.body.innerHTML = '<a href="/question/1">为什么2026年教育突然松绑了</a><a href="/question/2">Other</a>'
+    document.querySelector('a[href="/question/1"]')!.addEventListener('click', event => { event.preventDefault(); clicked = true })
+    domClick({ selector: 'a[href*="question"]:has-text("为什么2026年教育突然松绑了")' })
     expect(clicked).toBe(true)
   })
 })
