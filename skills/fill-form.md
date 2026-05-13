@@ -6,7 +6,8 @@ tool: dom.fill
 parameters:
   selector: string
   value: string
+  timeout: number
   submit: string
 ---
 
-Fills the input matching the CSS selector with the given value. Set submit to "true" to also submit the form after filling.
+Fills the visible input matching the CSS selector, waiting up to `timeout` milliseconds if provided. Set submit to "true" to also submit the form after filling.

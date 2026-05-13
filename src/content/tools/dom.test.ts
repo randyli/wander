@@ -22,6 +22,16 @@ describe('domGetText', () => {
   it('throws when selector not found', () => {
     expect(() => domGetText({ selector: '#missing' })).toThrow('Element not found')
   })
+
+  it('applies max length and optional link/form summaries', () => {
+    document.body.innerHTML = '<form id="search"><input name="q" placeholder="Search" /></form><a href="/docs">Docs</a><p>Long content</p>'
+    const text = domGetText({ includeLinks: true, includeForms: true, maxLength: 500 })
+    expect(text).toContain('Links:')
+    expect(text).toContain('Docs:')
+    expect(text).toContain('Forms:')
+    expect(text).toContain('Search (text)')
+    expect(domGetText({ maxLength: 4 })).toContain('[truncated')
+  })
 })
 
 describe('domGetHTML', () => {
@@ -35,30 +45,30 @@ describe('domGetHTML', () => {
 })
 
 describe('domClick', () => {
-  it('clicks the element', () => {
+  it('clicks the element', async () => {
     let clicked = false
     document.body.innerHTML = '<button id="btn">Click</button>'
     document.getElementById('btn')!.addEventListener('click', () => { clicked = true })
-    domClick({ selector: '#btn' })
+    await domClick({ selector: '#btn' })
     expect(clicked).toBe(true)
   })
 
-  it('clicks an element selected with :has-text', () => {
+  it('clicks an element selected with :has-text', async () => {
     let clicked = false
     document.body.innerHTML = '<a href="/question/1">为什么2026年教育突然松绑了</a><a href="/question/2">Other</a>'
     document.querySelector('a[href="/question/1"]')!.addEventListener('click', event => { event.preventDefault(); clicked = true })
-    domClick({ selector: 'a[href*="question"]:has-text("为什么2026年教育突然松绑了")' })
+    await domClick({ selector: 'a[href*="question"]:has-text("为什么2026年教育突然松绑了")' })
     expect(clicked).toBe(true)
   })
 })
 
 describe('domFill', () => {
-  it('fills input value and fires input event', () => {
+  it('fills input value and fires input event', async () => {
     document.body.innerHTML = '<input id="name" type="text" />'
     const input = document.getElementById('name') as HTMLInputElement
     let fired = false
     input.addEventListener('input', () => { fired = true })
-    domFill({ selector: '#name', value: 'Alice' })
+    await domFill({ selector: '#name', value: 'Alice' })
     expect(input.value).toBe('Alice')
     expect(fired).toBe(true)
   })
@@ -86,5 +96,11 @@ describe('domWaitFor', () => {
   it('rejects when element does not appear within timeout', async () => {
     document.body.innerHTML = ''
     await expect(domWaitFor({ selector: '#missing', timeout: 50 })).rejects.toThrow('Timeout')
+  })
+
+  it('waits for visible elements when requested', async () => {
+    document.body.innerHTML = '<button id="later" style="display: none">Go</button>'
+    setTimeout(() => { document.getElementById('later')!.style.display = 'block' }, 20)
+    await expect(domWaitFor({ selector: '#later', timeout: 100, visible: true })).resolves.toBeUndefined()
   })
 })

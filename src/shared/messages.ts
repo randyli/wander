@@ -86,7 +86,7 @@ export interface ToolCallMessage extends BaseMessage {
 
 export interface ToolResultMessage extends BaseMessage {
   type: MessageType.TOOL_RESULT
-  payload: { result: unknown; error?: string }
+  payload: { ok?: boolean; result: unknown; error?: string; errorCode?: string; errorMessage?: string }
 }
 
 export type TaskEventType =

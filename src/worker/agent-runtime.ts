@@ -21,6 +21,60 @@ export interface RunResult {
   thinking: string  // reasoning + tool steps
 }
 
+interface NormalizedToolResult {
+  ok: boolean
+  result: unknown
+  errorCode?: string
+  errorMessage?: string
+}
+
+function classifyToolError(value: unknown): { errorCode: string; errorMessage: string } {
+  const message = value instanceof Error ? value.message : String(value)
+  const explicitCode = (value as { code?: unknown })?.code
+  if (typeof explicitCode === 'string' && explicitCode) return { errorCode: explicitCode, errorMessage: message }
+
+  if (/element not found|form not found/i.test(message)) return { errorCode: 'ELEMENT_NOT_FOUND', errorMessage: message }
+  if (/not visible/i.test(message)) return { errorCode: 'ELEMENT_NOT_VISIBLE', errorMessage: message }
+  if (/timeout|timed out/i.test(message)) return { errorCode: 'TOOL_TIMEOUT', errorMessage: message }
+  if (/cannot execute tools|restricted|chrome:\/\/|chrome-extension:\/\//i.test(message)) return { errorCode: 'RESTRICTED_URL', errorMessage: message }
+  if (/page is still loading|page.*not.*loaded|receiving end does not exist|could not establish connection/i.test(message)) return { errorCode: 'PAGE_NOT_LOADED', errorMessage: message }
+  if (/captcha|cloudflare|verify you are human|access denied|403/i.test(message)) return { errorCode: 'CAPTCHA_OR_CLOUDFLARE', errorMessage: message }
+  return { errorCode: 'TOOL_ERROR', errorMessage: message }
+}
+
+function normalizeToolResult(result: unknown): NormalizedToolResult {
+  const maybeMessage = result as { payload?: unknown }
+  const candidate = maybeMessage?.payload ?? result
+  const structured = candidate as { ok?: unknown; result?: unknown; error?: unknown; errorCode?: unknown; errorMessage?: unknown }
+
+  if (structured?.ok === false) {
+    const nestedError = structured.error as { code?: unknown; message?: unknown } | undefined
+    const errorCode = typeof structured.errorCode === 'string' ? structured.errorCode
+      : typeof nestedError?.code === 'string' ? nestedError.code
+      : classifyToolError(structured.errorMessage ?? nestedError?.message ?? structured.error ?? 'Tool failed').errorCode
+    const errorMessage = typeof structured.errorMessage === 'string' ? structured.errorMessage
+      : typeof nestedError?.message === 'string' ? nestedError.message
+      : typeof structured.error === 'string' ? structured.error
+      : 'Tool failed'
+    return { ok: false, result: structured.result ?? null, errorCode, errorMessage }
+  }
+
+  if (typeof structured?.error === 'string') {
+    const classified = classifyToolError(structured.error)
+    return { ok: false, result: structured.result ?? null, ...classified }
+  }
+
+  if (structured?.ok === true && 'result' in structured) {
+    return { ok: true, result: structured.result }
+  }
+
+  return { ok: true, result: candidate }
+}
+
+function formatToolErrorForModel(tool: string, errorCode: string, errorMessage: string): string {
+  return JSON.stringify({ ok: false, errorCode, errorMessage, tool })
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error('Task cancelled')
 }
@@ -112,20 +166,14 @@ export class AgentRuntime {
           result = await executeToolCall(toolCall.name, toolCall.params)
           throwIfAborted(signal)
         } catch (err) {
-          emitTaskEvent?.({
-            taskId,
-            agentName: agent.name,
-            eventType: 'tool_error',
-            toolName: toolCall.name,
-            params: toolCall.params,
-            status: 'error',
-            summary: err instanceof Error ? err.message : String(err),
-          })
-          throw err
+          const classified = classifyToolError(err)
+          result = { ok: false, result: null, ...classified }
         }
-        wm?.logToolCall(taskId, toolCall.name, toolCall.params, result)
-        const payload = (result as { payload?: { result?: unknown; error?: string } })?.payload
-        const unwrapped = payload?.error ? `Error: ${payload.error}` : (payload?.result ?? result)
+        const normalized = normalizeToolResult(result)
+        wm?.logToolCall(taskId, toolCall.name, toolCall.params, normalized)
+        const unwrapped = normalized.ok
+          ? normalized.result
+          : formatToolErrorForModel(toolCall.name, normalized.errorCode ?? 'TOOL_ERROR', normalized.errorMessage ?? 'Tool failed')
         const raw = typeof unwrapped === 'string' ? unwrapped : JSON.stringify(unwrapped)
         const content = raw.startsWith('data:image/')
           ? '[Screenshot taken, but this is a text-only model and cannot process images. Use dom_getText to read page content instead.]'
@@ -134,10 +182,10 @@ export class AgentRuntime {
         emitTaskEvent?.({
           taskId,
           agentName: agent.name,
-          eventType: payload?.error ? 'tool_error' : 'tool_complete',
+          eventType: normalized.ok ? 'tool_complete' : 'tool_error',
           toolName: toolCall.name,
           params: toolCall.params,
-          status: payload?.error ? 'error' : 'success',
+          status: normalized.ok ? 'success' : 'error',
           summary: summarizeValue(unwrapped),
         })
 

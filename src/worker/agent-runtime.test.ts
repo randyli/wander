@@ -82,4 +82,56 @@ describe('AgentRuntime', () => {
     expect(executeToolCall).not.toHaveBeenCalledWith('dom.click', { step: 2 })
   })
 
+  it('passes structured tool errors back to the LLM instead of throwing', async () => {
+    const executeToolCall = vi.fn().mockResolvedValue({
+      payload: {
+        ok: false,
+        result: null,
+        errorCode: 'ELEMENT_NOT_FOUND',
+        errorMessage: 'Element not found: #missing',
+      },
+    })
+    const client = makeMockClient([
+      { content: '', toolCalls: [{ id: 'c1', name: 'dom.getText', params: { selector: '#missing' } }], stopReason: 'tool_use' },
+      { content: 'I will try another selector.', toolCalls: [], stopReason: 'end_turn' },
+    ])
+    const runtime = new AgentRuntime({ agent: mockAgent, client, executeToolCall, maxToolCalls: 10 })
+
+    const result = await runtime.run('Read page', 'task-tool-error')
+
+    expect(result.content).toBe('I will try another selector.')
+    const secondCallMessages = vi.mocked(client.chat).mock.calls[1][0]
+    expect(secondCallMessages.at(-1)?.role).toBe('tool')
+    expect(secondCallMessages.at(-1)?.content).toContain('"ok":false')
+    expect(secondCallMessages.at(-1)?.content).toContain('"errorCode":"ELEMENT_NOT_FOUND"')
+  })
+
+  it('classifies thrown restricted URL errors and returns them to the LLM', async () => {
+    const executeToolCall = vi.fn().mockRejectedValue(new Error('Cannot execute tools on this page. Switch to a normal webpage first.'))
+    const client = makeMockClient([
+      { content: '', toolCalls: [{ id: 'c1', name: 'dom.getText', params: {} }], stopReason: 'tool_use' },
+      { content: 'Please switch to a normal webpage.', toolCalls: [], stopReason: 'end_turn' },
+    ])
+    const runtime = new AgentRuntime({ agent: mockAgent, client, executeToolCall, maxToolCalls: 10 })
+
+    await runtime.run('Read page', 'task-restricted-url')
+
+    const secondCallMessages = vi.mocked(client.chat).mock.calls[1][0]
+    expect(secondCallMessages.at(-1)?.content).toContain('"errorCode":"RESTRICTED_URL"')
+  })
+
+  it('classifies thrown tool timeout errors and returns them to the LLM', async () => {
+    const executeToolCall = vi.fn().mockRejectedValue(new Error('Timeout waiting for: #slow'))
+    const client = makeMockClient([
+      { content: '', toolCalls: [{ id: 'c1', name: 'dom.waitFor', params: { selector: '#slow' } }], stopReason: 'tool_use' },
+      { content: 'I will wait longer.', toolCalls: [], stopReason: 'end_turn' },
+    ])
+    const runtime = new AgentRuntime({ agent: mockAgent, client, executeToolCall, maxToolCalls: 10 })
+
+    await runtime.run('Wait', 'task-timeout')
+
+    const secondCallMessages = vi.mocked(client.chat).mock.calls[1][0]
+    expect(secondCallMessages.at(-1)?.content).toContain('"errorCode":"TOOL_TIMEOUT"')
+  })
+
 })
