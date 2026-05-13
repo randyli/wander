@@ -1,3 +1,5 @@
+import type { ToolRisk } from './types'
+
 export enum MessageType {
   USER_MESSAGE = 'USER_MESSAGE',
   LIST_AGENTS = 'LIST_AGENTS',
@@ -25,6 +27,8 @@ export enum MessageType {
   RESPONSE = 'RESPONSE',
   TOOL_CALL = 'TOOL_CALL',
   TOOL_RESULT = 'TOOL_RESULT',
+  TOOL_APPROVAL_REQUEST = 'TOOL_APPROVAL_REQUEST',
+  TOOL_APPROVAL_RESPONSE = 'TOOL_APPROVAL_RESPONSE',
 }
 
 export interface BaseMessage {
@@ -57,8 +61,19 @@ export interface ResponseMessage extends BaseMessage {
   payload: unknown
 }
 
+export interface ToolApprovalRequestMessage extends BaseMessage {
+  type: MessageType.TOOL_APPROVAL_REQUEST
+  payload: { tool: string; params: Record<string, unknown>; targetUrl?: string; risk: ToolRisk }
+}
+
+export interface ToolApprovalResponseMessage extends BaseMessage {
+  type: MessageType.TOOL_APPROVAL_RESPONSE
+  payload: { approved: boolean; reason?: string }
+}
+
 export type ChromeMessage =
   | UserMessage | AgentMessage | ToolCallMessage | ToolResultMessage | ResponseMessage
+  | ToolApprovalRequestMessage | ToolApprovalResponseMessage
 
 export function isToolCallMessage(msg: unknown): msg is ToolCallMessage {
   return (msg as BaseMessage)?.type === MessageType.TOOL_CALL
@@ -70,4 +85,12 @@ export function isUserMessage(msg: unknown): msg is UserMessage {
 
 export function isToolResultMessage(msg: unknown): msg is ToolResultMessage {
   return (msg as BaseMessage)?.type === MessageType.TOOL_RESULT
+}
+
+export function isToolApprovalRequestMessage(msg: unknown): msg is ToolApprovalRequestMessage {
+  return (msg as BaseMessage)?.type === MessageType.TOOL_APPROVAL_REQUEST
+}
+
+export function isToolApprovalResponseMessage(msg: unknown): msg is ToolApprovalResponseMessage {
+  return (msg as BaseMessage)?.type === MessageType.TOOL_APPROVAL_RESPONSE
 }

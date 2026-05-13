@@ -1,4 +1,5 @@
 import type { AgentDef, GeneralSettingsConfig, LLMMessage, SkillDef, Tool } from '@shared/types'
+import { getToolRisk } from './tool-approval'
 import { AgentRuntime } from './agent-runtime'
 import type { RunResult } from './agent-runtime'
 import { getLLMClient } from './llm/client'
@@ -49,6 +50,7 @@ function buildTools(skillDefs: SkillDef[]): Tool[] {
     parameters: Object.fromEntries(
       Object.entries(s.parameters).map(([k, v]) => [k, { type: v, description: k }])
     ),
+    risk: getToolRisk(s.tool),
   }))
 }
 
@@ -164,6 +166,7 @@ export class Orchestrator {
           agent_name: { type: 'string', description: 'Name of the sub-agent to call' },
           task: { type: 'string', description: 'Detailed task description for the sub-agent' },
         },
+        risk: 'read',
       })
     }
 
