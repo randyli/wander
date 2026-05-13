@@ -166,8 +166,10 @@ export class Orchestrator {
 
     const config = await getConfig()
     const allAgents = await listAgents()
-    const orchestratorAgent = allAgents[0] ?? this.defaultAgent(config)
-    const subAgents = allAgents.slice(1)
+    const orchestratorAgent = allAgents.find(a => a.name === 'orchestrator')
+      ?? allAgents.find(a => a.name === 'orchestrator-agent')
+      ?? this.defaultAgent(config)
+    const subAgents = allAgents.filter(a => a.name !== orchestratorAgent.name)
 
     const provider = config.defaultProvider || detectProvider(config.defaultModel)
     const apiKey = await getApiKey(provider)
@@ -211,7 +213,7 @@ export class Orchestrator {
         })
         try {
           if (controller.signal.aborted) throw new Error('Task cancelled')
-          const result = await self.runSubAgent(agent_name, task, allAgents, config, memoryContext, taskId, controller.signal)
+          const result = await self.runSubAgent(agent_name, task, subAgents, config, memoryContext, taskId, controller.signal)
           self.options.emitTaskEvent?.({
             taskId,
             agentName: agent_name,
@@ -297,7 +299,7 @@ export class Orchestrator {
     signal?: AbortSignal,
   ): Promise<string> {
     const subAgent = allAgents.find(a => a.name === agentName)
-    if (!subAgent) throw new Error(`Sub-agent not found: "${agentName}". Available: ${allAgents.slice(1).map(a => a.name).join(', ')}`)
+    if (!subAgent) throw new Error(`Sub-agent not found: "${agentName}". Available: ${allAgents.map(a => a.name).join(', ')}`)
 
     const { provider, model } = subAgent.llm ? parseAgentLlm(subAgent.llm) : { provider: config.defaultProvider, model: config.defaultModel }
     const apiKey = await this.options.getApiKey(provider)
