@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
 import type { LLMMessage, Tool, LLMResponse, ToolCall } from '@shared/types'
-import type { LLMClient, LLMClientOptions } from './client'
+import type { LLMClient, LLMClientOptions, LLMStreamOptions } from './client'
 
 export class GeminiClient implements LLMClient {
   private genAI: GoogleGenerativeAI
@@ -11,7 +11,7 @@ export class GeminiClient implements LLMClient {
     this.model = model
   }
 
-  async chat(messages: LLMMessage[], tools: Tool[] = []): Promise<LLMResponse> {
+  async chat(messages: LLMMessage[], tools: Tool[] = [], _options: { signal?: AbortSignal } = {}): Promise<LLMResponse> {
     const systemMsg = messages.find(m => m.role === 'system')
     const geminiModel = this.genAI.getGenerativeModel({
       model: this.model,
@@ -56,4 +56,13 @@ export class GeminiClient implements LLMClient {
       stopReason: functionCalls.length > 0 ? 'tool_use' : 'end_turn',
     }
   }
+
+  async streamChat(messages: LLMMessage[], tools: Tool[] = [], options: LLMStreamOptions = {}): Promise<LLMResponse> {
+    // Gemini function-calling chunks require provider-specific reconstruction; use the
+    // stable non-streaming path when tools are present and emit the final text chunk.
+    const response = await this.chat(messages, tools, { signal: options.signal })
+    if (response.content) options.onChunk?.(response.content)
+    return response
+  }
+
 }

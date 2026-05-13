@@ -21,6 +21,7 @@ const STATUS_COLORS: Record<TaskEventPayload['status'], string> = {
   running: '#2563eb',
   success: '#16a34a',
   error: '#dc2626',
+  cancelled: '#f97316',
 }
 
 function stringify(value: unknown): string {

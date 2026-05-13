@@ -2,6 +2,10 @@ import type { ToolRisk } from './types'
 
 export enum MessageType {
   USER_MESSAGE = 'USER_MESSAGE',
+  STREAM_CHUNK = 'STREAM_CHUNK',
+  CANCEL_TASK = 'CANCEL_TASK',
+  CREATE_CONVERSATION = 'CREATE_CONVERSATION',
+  SWITCH_CONVERSATION = 'SWITCH_CONVERSATION',
   LIST_AGENTS = 'LIST_AGENTS',
   INSTALL_AGENT = 'INSTALL_AGENT',
   DELETE_AGENT = 'DELETE_AGENT',
@@ -47,7 +51,27 @@ export interface BaseMessage {
 
 export interface UserMessage extends BaseMessage {
   type: MessageType.USER_MESSAGE
-  payload: { text: string }
+  payload: { text: string; conversationId?: string; taskId?: string }
+}
+
+export interface StreamChunkMessage extends BaseMessage {
+  type: MessageType.STREAM_CHUNK
+  payload: { taskId: string; conversationId?: string; text: string; done?: boolean }
+}
+
+export interface CancelTaskMessage extends BaseMessage {
+  type: MessageType.CANCEL_TASK
+  payload: { taskId: string }
+}
+
+export interface CreateConversationMessage extends BaseMessage {
+  type: MessageType.CREATE_CONVERSATION
+  payload?: { conversationId?: string }
+}
+
+export interface SwitchConversationMessage extends BaseMessage {
+  type: MessageType.SWITCH_CONVERSATION
+  payload: { conversationId: string }
 }
 
 export interface AgentMessage extends BaseMessage {
@@ -76,7 +100,7 @@ export type TaskEventType =
   | 'subagent_error'
   | 'final_response'
 
-export type TaskEventStatus = 'pending' | 'running' | 'success' | 'error'
+export type TaskEventStatus = 'pending' | 'running' | 'success' | 'error' | 'cancelled'
 
 export interface TaskEventPayload {
   taskId: string
@@ -109,7 +133,8 @@ export interface ToolApprovalResponseMessage extends BaseMessage {
 }
 
 export type ChromeMessage =
-  | UserMessage | AgentMessage | ToolCallMessage | ToolResultMessage | TaskEventMessage | ResponseMessage
+  | UserMessage | StreamChunkMessage | CancelTaskMessage | CreateConversationMessage | SwitchConversationMessage
+  | AgentMessage | ToolCallMessage | ToolResultMessage | TaskEventMessage | ResponseMessage
   | ToolApprovalRequestMessage | ToolApprovalResponseMessage
 
 export function isToolCallMessage(msg: unknown): msg is ToolCallMessage {
@@ -134,4 +159,8 @@ export function isToolApprovalResponseMessage(msg: unknown): msg is ToolApproval
 
 export function isTaskEventMessage(msg: unknown): msg is TaskEventMessage {
   return (msg as BaseMessage)?.type === MessageType.TASK_EVENT
+}
+
+export function isStreamChunkMessage(msg: unknown): msg is StreamChunkMessage {
+  return (msg as BaseMessage)?.type === MessageType.STREAM_CHUNK
 }

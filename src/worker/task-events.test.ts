@@ -6,6 +6,9 @@ import type { TaskEventPayload } from '@shared/messages'
 
 vi.mock('./llm/client', () => ({
   getLLMClient: vi.fn(),
+  streamWithFallback: vi.fn((client, messages, tools, options) => {
+    return client.streamChat ? client.streamChat(messages, tools, options) : client.chat(messages, tools, { signal: options?.signal })
+  }),
 }))
 
 const config: GeneralSettingsConfig = {

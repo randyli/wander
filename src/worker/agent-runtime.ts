@@ -1,5 +1,6 @@
 import type { TaskEventPayload } from '@shared/messages'
 import type { AgentDef, LLMMessage, Tool } from '@shared/types'
+import { streamWithFallback } from './llm/client'
 import type { LLMClient } from './llm/client'
 import type { WorkingMemoryManager } from './memory/working'
 
@@ -11,11 +12,17 @@ interface AgentRuntimeOptions {
   tools?: Tool[]
   workingMemory?: WorkingMemoryManager
   emitTaskEvent?: (event: TaskEventPayload) => void
+  signal?: AbortSignal
+  onStreamChunk?: (chunk: string) => void
 }
 
 export interface RunResult {
   content: string
   thinking: string  // reasoning + tool steps
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Error('Task cancelled')
 }
 
 function summarizeValue(value: unknown, maxLength = 600): string {
@@ -32,7 +39,7 @@ export class AgentRuntime {
   }
 
   async run(userMessage: string, taskId: string, history: LLMMessage[] = []): Promise<RunResult> {
-    const { agent, client, executeToolCall, maxToolCalls, emitTaskEvent } = this.options
+    const { agent, client, executeToolCall, maxToolCalls, emitTaskEvent, signal, onStreamChunk } = this.options
     const messages: LLMMessage[] = [
       { role: 'system', content: agent.systemPrompt },
       ...history,
@@ -49,8 +56,9 @@ export class AgentRuntime {
     let toolCallCount = 0
 
     while (true) {
+      throwIfAborted(signal)
       console.log('[AgentRuntime] sending to LLM →', JSON.stringify({ messages, tools }, null, 2))
-      const response = await client.chat(messages, tools)
+      const response = await streamWithFallback(client, messages, tools, { signal, onChunk: onStreamChunk })
       console.log('[AgentRuntime] LLM response ←', JSON.stringify(response, null, 2))
       emitTaskEvent?.({
         taskId,
@@ -85,6 +93,7 @@ export class AgentRuntime {
       wm?.appendMessage(taskId, { role: 'assistant', content: response.content })
 
       for (const toolCall of response.toolCalls) {
+        throwIfAborted(signal)
         if (toolCallCount >= maxToolCalls) {
           throw new Error(`Max tool calls (${maxToolCalls}) exceeded`)
         }
@@ -101,6 +110,7 @@ export class AgentRuntime {
         let result: unknown
         try {
           result = await executeToolCall(toolCall.name, toolCall.params)
+          throwIfAborted(signal)
         } catch (err) {
           emitTaskEvent?.({
             taskId,

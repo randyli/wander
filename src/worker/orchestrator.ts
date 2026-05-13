@@ -16,14 +16,15 @@ interface OrchestratorOptions {
   executeToolCall: (tool: string, params: Record<string, unknown>) => Promise<unknown>
   listAgents: () => Promise<AgentDef[]>
   listSkills: (names: string[]) => Promise<SkillDef[]>
-  loadHistory: () => Promise<LLMMessage[]>
-  saveHistory: (history: LLMMessage[]) => Promise<void>
+  loadHistory: (conversationId?: string) => Promise<LLMMessage[]>
+  saveHistory: (history: LLMMessage[], conversationId?: string) => Promise<void>
   sessionMemory: SessionMemoryManager
   systemMemory: SystemMemoryManager
   workingMemory: WorkingMemoryManager
   episodicMemory: EpisodicMemory
   knowledgeStore: KnowledgeStore
   emitTaskEvent?: (event: TaskEventPayload) => void
+  emitStreamChunk?: (payload: { taskId: string; conversationId?: string; text: string; done?: boolean }) => void
 }
 
 const MAX_HISTORY = 100
@@ -137,18 +138,22 @@ function withMemory(agent: AgentDef, memoryContext: string): AgentDef {
 
 export class Orchestrator {
   private options: OrchestratorOptions
-  private history: LLMMessage[] | null = null
+  private histories = new Map<string, LLMMessage[]>()
+  private abortControllers = new Map<string, AbortController>()
 
   constructor(options: OrchestratorOptions) {
     this.options = options
   }
 
-  async handleUserMessage(taskId: string, message: string): Promise<RunResult> {
+  async handleUserMessage(taskId: string, message: string, conversationId = 'default'): Promise<RunResult> {
     const { getApiKey, getConfig, executeToolCall, listAgents, listSkills, sessionMemory, systemMemory, workingMemory, episodicMemory, knowledgeStore } = this.options
 
-    if (this.history === null) {
-      this.history = await this.options.loadHistory()
+    if (!this.histories.has(conversationId)) {
+      this.histories.set(conversationId, await this.options.loadHistory(conversationId))
     }
+    const history = this.histories.get(conversationId)!
+    const controller = new AbortController()
+    this.abortControllers.set(taskId, controller)
 
     workingMemory.init(taskId)
     this.options.emitTaskEvent?.({
@@ -205,7 +210,8 @@ export class Orchestrator {
           summary: summarizeValue(task),
         })
         try {
-          const result = await self.runSubAgent(agent_name, task, allAgents, config, memoryContext, taskId)
+          if (controller.signal.aborted) throw new Error('Task cancelled')
+          const result = await self.runSubAgent(agent_name, task, allAgents, config, memoryContext, taskId, controller.signal)
           self.options.emitTaskEvent?.({
             taskId,
             agentName: agent_name,
@@ -229,6 +235,7 @@ export class Orchestrator {
           throw err
         }
       }
+      if (controller.signal.aborted) throw new Error('Task cancelled')
       return executeToolCall(toolName, params)
     }
 
@@ -240,27 +247,44 @@ export class Orchestrator {
       tools,
       workingMemory,
       emitTaskEvent: this.options.emitTaskEvent,
+      signal: controller.signal,
+      onStreamChunk: text => this.options.emitStreamChunk?.({ taskId, conversationId, text }),
     })
-    const result = await runtime.run(message, taskId, this.history)
 
-    this.history.push({ role: 'user', content: message })
-    this.history.push({ role: 'assistant', content: result.content })
-    if (this.history.length > MAX_HISTORY) {
-      this.history = this.history.slice(-MAX_HISTORY)
+    try {
+      const result = await runtime.run(message, taskId, history)
+
+      history.push({ role: 'user', content: message })
+      history.push({ role: 'assistant', content: result.content })
+      const trimmedHistory = history.length > MAX_HISTORY ? history.slice(-MAX_HISTORY) : history
+      this.histories.set(conversationId, trimmedHistory)
+      await this.options.saveHistory(trimmedHistory, conversationId)
+      this.options.emitStreamChunk?.({ taskId, conversationId, text: '', done: true })
+
+      // Fire-and-forget: update session memory without blocking
+      sessionMemory.infer(trimmedHistory, client).catch(() => {})
+
+      // Fire-and-forget: save episode and trim old history
+      this.saveEpisode(message, result).catch(() => {})
+      this.summarizeOldHistory(conversationId).catch(() => {})
+
+      return result
+    } catch (err) {
+      if (controller.signal.aborted) {
+        this.options.emitTaskEvent?.({
+          taskId,
+          agentName: orchestratorAgent.name,
+          eventType: 'final_response',
+          status: 'cancelled',
+          summary: 'Task cancelled',
+        })
+      }
+      throw err
+    } finally {
+      this.abortControllers.delete(taskId)
+      // Cleanup working memory for this task
+      workingMemory.clear(taskId)
     }
-    await this.options.saveHistory(this.history)
-
-    // Fire-and-forget: update session memory without blocking
-    sessionMemory.infer(this.history, client).catch(() => {})
-
-    // Cleanup working memory for this task
-    workingMemory.clear(taskId)
-
-    // Fire-and-forget: save episode and trim old history
-    this.saveEpisode(taskId, message, result).catch(() => {})
-    this.summarizeOldHistory(client).catch(() => {})
-
-    return result
   }
 
   private async runSubAgent(
@@ -270,6 +294,7 @@ export class Orchestrator {
     config: GeneralSettingsConfig,
     _memoryContext: string,
     parentTaskId?: string,
+    signal?: AbortSignal,
   ): Promise<string> {
     const subAgent = allAgents.find(a => a.name === agentName)
     if (!subAgent) throw new Error(`Sub-agent not found: "${agentName}". Available: ${allAgents.slice(1).map(a => a.name).join(', ')}`)
@@ -293,21 +318,36 @@ export class Orchestrator {
     const runtime = new AgentRuntime({
       agent: withMemory(subAgent, subMemoryContext),
       client,
-      executeToolCall: this.options.executeToolCall,
+      executeToolCall: async (tool, params) => {
+        if (signal?.aborted) throw new Error('Task cancelled')
+        return this.options.executeToolCall(tool, params)
+      },
       maxToolCalls: config.maxToolCallsPerTask,
       tools,
       workingMemory: this.options.workingMemory,
       emitTaskEvent: event => this.options.emitTaskEvent?.({ ...event, taskId: parentTaskId ?? event.taskId }),
+      signal,
+      onStreamChunk: text => this.options.emitStreamChunk?.({ taskId: parentTaskId ?? subTaskId, text }),
     })
-    const result = await runtime.run(task, subTaskId)
-    this.options.workingMemory.clear(subTaskId)
-    return result.content
+    try {
+      const result = await runtime.run(task, subTaskId)
+      return result.content
+    } finally {
+      this.options.workingMemory.clear(subTaskId)
+    }
   }
 
-  clearHistory(): void {
-    this.history = []
+  cancelTask(taskId: string): boolean {
+    const controller = this.abortControllers.get(taskId)
+    if (!controller) return false
+    controller.abort()
+    return true
+  }
+
+  clearHistory(conversationId = 'default'): void {
+    this.histories.set(conversationId, [])
     this.options.sessionMemory.clear()
-    this.options.saveHistory([])
+    this.options.saveHistory([], conversationId)
   }
 
   private defaultAgent(config: GeneralSettingsConfig): AgentDef {
@@ -320,7 +360,7 @@ export class Orchestrator {
     }
   }
 
-  private async saveEpisode(taskId: string, message: string, result: RunResult): Promise<void> {
+  private async saveEpisode(message: string, result: RunResult): Promise<void> {
     try {
       const { episodicMemory } = this.options
       const summary = `Q: ${message.slice(0, 100)} → ${result.content.slice(0, 100)}`
@@ -332,9 +372,10 @@ export class Orchestrator {
     } catch { /* fire-and-forget, never fail */ }
   }
 
-  private async summarizeOldHistory(client: import('./llm/client').LLMClient): Promise<void> {
-    if (!this.history || this.history.length < MAX_HISTORY) return
-    const oldest = this.history.slice(0, 30)
+  private async summarizeOldHistory(conversationId = 'default'): Promise<void> {
+    const history = this.histories.get(conversationId)
+    if (!history || history.length < MAX_HISTORY) return
+    const oldest = history.slice(0, 30)
     const lines = oldest
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .slice(0, 10)

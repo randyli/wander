@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { MessageType, isTaskEventMessage, isToolApprovalRequestMessage } from '@shared/messages'
+import { MessageType, isStreamChunkMessage, isTaskEventMessage, isToolApprovalRequestMessage } from '@shared/messages'
 import type { TaskEventPayload, ToolApprovalRequestMessage } from '@shared/messages'
 import MessageBubble from './MessageBubble'
 import TaskTimeline from './TaskTimeline'
@@ -16,7 +16,7 @@ interface ApprovalParamRow {
   value: string
 }
 
-type WorkerResponse = { payload: { text: string; agentName: string; thinking?: string } } | { error: string }
+type WorkerResponse = { payload: { text?: string; agentName?: string; thinking?: string; taskId?: string; conversationId?: string; history?: Array<{ role: string; content: string }>; ok?: boolean } } | { error: string }
 
 const TOOL_LABELS: Record<string, string> = {
   'dom.fill': '填写网页表单',
@@ -98,13 +98,16 @@ export default function ChatPanel() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
+  const [conversationId, setConversationId] = useState('default')
+  const [taskStatus, setTaskStatus] = useState<'idle' | 'running' | 'done' | 'cancelled' | 'error'>('idle')
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const [taskEvents, setTaskEvents] = useState<TaskEventPayload[]>([])
   const approvalResponderRef = useRef<((response: unknown) => void) | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    sendToWorker(MessageType.GET_HISTORY, {}).then(r => {
+    sendToWorker(MessageType.GET_HISTORY, { conversationId }).then(r => {
       if ('payload' in r) {
         const history = r.payload as Array<{ role: string; content: string }>
         setMessages(history.map(m => ({
@@ -114,15 +117,26 @@ export default function ChatPanel() {
         })))
       }
     }).catch(() => {})
-  }, [])
+  }, [conversationId])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, taskEvents])
 
-
   useEffect(() => {
     const listener = (message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+      if (isStreamChunkMessage(message)) {
+        if (message.payload.conversationId && message.payload.conversationId !== conversationId) return false
+        setMessages(prev => prev.map(m => m.id === message.payload.taskId ? { ...m, content: m.content + message.payload.text } : m))
+        if (message.payload.done) {
+          setTaskStatus('done')
+          setCurrentTaskId(null)
+        }
+        return false
+      }
       if (isTaskEventMessage(message)) {
         setTaskEvents(prev => [...prev, message.payload])
+        if (message.payload.status === 'cancelled') setTaskStatus('cancelled')
+        else if (message.payload.status === 'error') setTaskStatus('error')
+        else if (message.payload.status === 'running') setTaskStatus('running')
         return false
       }
       if (!isToolApprovalRequestMessage(message)) return false
@@ -132,7 +146,7 @@ export default function ChatPanel() {
     }
     chrome.runtime.onMessage.addListener(listener)
     return () => chrome.runtime.onMessage.removeListener(listener)
-  }, [])
+  }, [conversationId])
 
   function respondToApproval(approved: boolean) {
     if (!pendingApproval) return
@@ -149,34 +163,63 @@ export default function ChatPanel() {
     const text = input.trim()
     if (!text || loading) return
     setInput('')
-    setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }])
+    const taskId = crypto.randomUUID()
+    setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }, { id: taskId, role: 'assistant', content: '', agentName: 'assistant' }])
     setTaskEvents([])
+    setCurrentTaskId(taskId)
+    setTaskStatus('running')
     setLoading(true)
     try {
-      const response = await sendToWorker(MessageType.USER_MESSAGE, { text })
+      const response = await sendToWorker(MessageType.USER_MESSAGE, { text, conversationId, taskId })
       if ('error' in response) throw new Error(response.error)
-      setMessages(prev => [...prev, {
-        id: crypto.randomUUID(), role: 'assistant',
-        content: response.payload.text,
+      setMessages(prev => prev.map(msg => msg.id === taskId ? {
+        ...msg,
+        content: msg.content || response.payload.text || '',
         thinking: response.payload.thinking,
         agentName: response.payload.agentName,
-      }])
+      } : msg))
+      setTaskStatus('done')
     } catch (err) {
-      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: `Error: ${err}` }])
+      setMessages(prev => prev.map(msg => msg.id === taskId ? { ...msg, content: msg.content || `Error: ${err}` } : msg))
+      setTaskStatus(String(err).includes('cancelled') ? 'cancelled' : 'error')
     } finally {
       setLoading(false)
+      setCurrentTaskId(null)
     }
   }
 
   async function handleClear() {
-    await sendToWorker(MessageType.CLEAR_HISTORY, {})
+    await sendToWorker(MessageType.CLEAR_HISTORY, { conversationId })
     setMessages([])
     setTaskEvents([])
   }
 
+  async function handleCancel() {
+    if (!currentTaskId) return
+    await sendToWorker(MessageType.CANCEL_TASK, { taskId: currentTaskId })
+    setTaskStatus('cancelled')
+    setLoading(false)
+    setCurrentTaskId(null)
+  }
+
+  async function handleNewConversation() {
+    const response = await sendToWorker(MessageType.CREATE_CONVERSATION, {})
+    if ('payload' in response && response.payload.conversationId) {
+      setConversationId(response.payload.conversationId)
+      setMessages([])
+      setTaskEvents([])
+      setTaskStatus('idle')
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '4px 16px', borderBottom: '1px solid #f3f4f6' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 16px', borderBottom: '1px solid #f3f4f6' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: '#6b7280' }}>
+          <span>状态：{taskStatus}</span>
+          <button onClick={handleNewConversation} style={{ fontSize: 11, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer' }}>新会话</button>
+          {loading && <button onClick={handleCancel} style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>取消</button>}
+        </div>
         <button onClick={handleClear} style={{ fontSize: 11, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer' }}>清除历史</button>
       </div>
       {pendingApproval && (
@@ -211,7 +254,7 @@ export default function ChatPanel() {
         )}
         <TaskTimeline events={taskEvents} />
         {messages.map(msg => <MessageBubble key={msg.id} role={msg.role} content={msg.content} agentName={msg.agentName} thinking={msg.thinking} />)}
-        {loading && <MessageBubble role="assistant" content="Thinking…" />}
+        {loading && !messages.some(m => m.id === currentTaskId && m.content) && <MessageBubble role="assistant" content="Thinking…" />}
         <div ref={bottomRef} />
       </div>
       <div style={{ padding: '8px 16px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8 }}>

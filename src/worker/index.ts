@@ -33,6 +33,20 @@ let systemMemory: SystemMemoryManager
 let workingMemory: WorkingMemoryManager
 let orchestrator: Orchestrator
 let initPromise: Promise<void> | null = null
+let activeConversationId = 'default'
+
+function historyKey(conversationId = activeConversationId): string {
+  return `conversationHistory:${conversationId}`
+}
+
+
+function emitStreamChunk(payload: { taskId: string; conversationId?: string; text: string; done?: boolean }): void {
+  chrome.runtime.sendMessage({
+    type: MessageType.STREAM_CHUNK,
+    requestId: crypto.randomUUID(),
+    payload,
+  }).catch?.(() => {})
+}
 
 function emitTaskEvent(payload: TaskEventPayload): void {
   chrome.runtime.sendMessage({
@@ -96,12 +110,13 @@ async function doInit() {
         memoryRetentionDays: settings.memoryRetentionDays,
       }
     },
-    loadHistory: async () => {
-      const result = await chrome.storage.local.get('conversationHistory')
-      return (result.conversationHistory as LLMMessage[]) ?? []
+    loadHistory: async (conversationId) => {
+      const key = historyKey(conversationId)
+      const result = await chrome.storage.local.get([key, 'conversationHistory'])
+      return (result[key] as LLMMessage[]) ?? (conversationId === 'default' ? (result.conversationHistory as LLMMessage[]) : undefined) ?? []
     },
-    saveHistory: async (history) => {
-      await chrome.storage.local.set({ conversationHistory: history })
+    saveHistory: async (history, conversationId) => {
+      await chrome.storage.local.set({ [historyKey(conversationId)]: history })
     },
     executeToolCall: async (toolLlm, params) => {
       const tool = toolLlm.replace(/_/g, '.')
@@ -209,6 +224,7 @@ async function doInit() {
     episodicMemory,
     knowledgeStore,
     emitTaskEvent,
+    emitStreamChunk,
   })
 }
 
@@ -278,9 +294,27 @@ async function handleMessage(message: { type: MessageType; requestId: string; pa
 
   switch (type) {
     case MessageType.USER_MESSAGE: {
-      const { text } = payload as { text: string }
-      const result = await orchestrator.handleUserMessage(crypto.randomUUID(), text)
-      return { type: MessageType.AGENT_MESSAGE, requestId, payload: { text: result.content, thinking: result.thinking, agentName: 'assistant' } }
+      const { text, conversationId = activeConversationId, taskId = crypto.randomUUID() } = payload as { text: string; conversationId?: string; taskId?: string }
+      activeConversationId = conversationId
+      const result = await orchestrator.handleUserMessage(taskId, text, conversationId)
+      return { type: MessageType.AGENT_MESSAGE, requestId, payload: { text: result.content, thinking: result.thinking, agentName: 'assistant', taskId, conversationId } }
+    }
+    case MessageType.CANCEL_TASK: {
+      const { taskId } = payload as { taskId: string }
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: orchestrator.cancelTask(taskId) } }
+    }
+    case MessageType.CREATE_CONVERSATION: {
+      const conversationId = (payload as { conversationId?: string } | undefined)?.conversationId ?? crypto.randomUUID()
+      activeConversationId = conversationId
+      await chrome.storage.local.set({ activeConversationId, [historyKey(conversationId)]: [] })
+      return { type: MessageType.RESPONSE, requestId, payload: { conversationId } }
+    }
+    case MessageType.SWITCH_CONVERSATION: {
+      const { conversationId } = payload as { conversationId: string }
+      activeConversationId = conversationId
+      await chrome.storage.local.set({ activeConversationId })
+      const result = await chrome.storage.local.get(historyKey(conversationId))
+      return { type: MessageType.RESPONSE, requestId, payload: { conversationId, history: result[historyKey(conversationId)] ?? [] } }
     }
     case MessageType.LIST_SKILLS:
       return { type: MessageType.RESPONSE, requestId, payload: await skillRegistry.list() }
@@ -331,12 +365,17 @@ async function handleMessage(message: { type: MessageType; requestId: string; pa
     case MessageType.GET_SYSTEM_MEMORY:
       return { type: MessageType.RESPONSE, requestId, payload: systemMemory.get() ?? null }
     case MessageType.GET_HISTORY: {
-      const result = await chrome.storage.local.get('conversationHistory')
-      return { type: MessageType.RESPONSE, requestId, payload: result.conversationHistory ?? [] }
+      const conversationId = (payload as { conversationId?: string } | undefined)?.conversationId ?? activeConversationId
+      const key = historyKey(conversationId)
+      const result = await chrome.storage.local.get([key, 'conversationHistory'])
+      const history = (result[key] as LLMMessage[]) ?? (conversationId === 'default' ? result.conversationHistory : undefined) ?? []
+      return { type: MessageType.RESPONSE, requestId, payload: history }
     }
-    case MessageType.CLEAR_HISTORY:
-      orchestrator.clearHistory()
+    case MessageType.CLEAR_HISTORY: {
+      const conversationId = (payload as { conversationId?: string } | undefined)?.conversationId ?? activeConversationId
+      orchestrator.clearHistory(conversationId)
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
+    }
     case MessageType.GET_PROVIDERS:
       return { type: MessageType.RESPONSE, requestId, payload: await llmProviderStore.getAllProviders() }
     case MessageType.SET_PROVIDER: {
