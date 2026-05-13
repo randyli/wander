@@ -1,6 +1,7 @@
 import { MessageType } from '@shared/messages'
 import type { TaskEventPayload } from '@shared/messages'
 import type { LLMMessage, ProviderConfig, GeneralSettingsConfig } from '@shared/types'
+import { validateDefaultProviderConfig } from '@shared/providerConfig'
 import { llmProviderStore, generalSettingsStore } from '../storage'
 import { Orchestrator } from './orchestrator'
 import { SkillRegistry } from './skill-registry'
@@ -289,12 +290,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true
 })
 
-async function handleMessage(message: { type: MessageType; requestId: string; payload?: unknown }): Promise<unknown> {
+export async function handleMessage(message: { type: MessageType; requestId: string; payload?: unknown }): Promise<unknown> {
   const { type, requestId, payload } = message
 
   switch (type) {
     case MessageType.USER_MESSAGE: {
       const { text, conversationId = activeConversationId, taskId = crypto.randomUUID() } = payload as { text: string; conversationId?: string; taskId?: string }
+      const settings = await generalSettingsStore.getSettings()
+      const providers = await llmProviderStore.getAllProviders()
+      const configError = validateDefaultProviderConfig(settings, providers)
+      if (configError) return { type: MessageType.RESPONSE, requestId, error: configError }
       activeConversationId = conversationId
       const result = await orchestrator.handleUserMessage(taskId, text, conversationId)
       return { type: MessageType.AGENT_MESSAGE, requestId, payload: { text: result.content, thinking: result.thinking, agentName: 'assistant', taskId, conversationId } }
