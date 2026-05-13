@@ -24,6 +24,7 @@ export enum MessageType {
   RESET_GENERAL_SETTINGS = 'RESET_GENERAL_SETTINGS',
   AGENT_MESSAGE = 'AGENT_MESSAGE',
   TASK_STATUS = 'TASK_STATUS',
+  TASK_EVENT = 'TASK_EVENT',
   RESPONSE = 'RESPONSE',
   TOOL_CALL = 'TOOL_CALL',
   TOOL_RESULT = 'TOOL_RESULT',
@@ -56,6 +57,34 @@ export interface ToolResultMessage extends BaseMessage {
   payload: { result: unknown; error?: string }
 }
 
+export type TaskEventType =
+  | 'user_message'
+  | 'llm_response'
+  | 'tool_start'
+  | 'tool_complete'
+  | 'tool_error'
+  | 'subagent_start'
+  | 'subagent_complete'
+  | 'subagent_error'
+  | 'final_response'
+
+export type TaskEventStatus = 'pending' | 'running' | 'success' | 'error'
+
+export interface TaskEventPayload {
+  taskId: string
+  agentName: string
+  eventType: TaskEventType
+  toolName?: string
+  params?: Record<string, unknown>
+  status: TaskEventStatus
+  summary?: string
+}
+
+export interface TaskEventMessage extends BaseMessage {
+  type: MessageType.TASK_EVENT
+  payload: TaskEventPayload
+}
+
 export interface ResponseMessage extends BaseMessage {
   type: MessageType.RESPONSE
   payload: unknown
@@ -72,7 +101,7 @@ export interface ToolApprovalResponseMessage extends BaseMessage {
 }
 
 export type ChromeMessage =
-  | UserMessage | AgentMessage | ToolCallMessage | ToolResultMessage | ResponseMessage
+  | UserMessage | AgentMessage | ToolCallMessage | ToolResultMessage | TaskEventMessage | ResponseMessage
   | ToolApprovalRequestMessage | ToolApprovalResponseMessage
 
 export function isToolCallMessage(msg: unknown): msg is ToolCallMessage {
@@ -93,4 +122,8 @@ export function isToolApprovalRequestMessage(msg: unknown): msg is ToolApprovalR
 
 export function isToolApprovalResponseMessage(msg: unknown): msg is ToolApprovalResponseMessage {
   return (msg as BaseMessage)?.type === MessageType.TOOL_APPROVAL_RESPONSE
+}
+
+export function isTaskEventMessage(msg: unknown): msg is TaskEventMessage {
+  return (msg as BaseMessage)?.type === MessageType.TASK_EVENT
 }

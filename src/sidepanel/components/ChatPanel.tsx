@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { MessageType, isToolApprovalRequestMessage } from '@shared/messages'
-import type { ToolApprovalRequestMessage } from '@shared/messages'
+import { MessageType, isTaskEventMessage, isToolApprovalRequestMessage } from '@shared/messages'
+import type { TaskEventPayload, ToolApprovalRequestMessage } from '@shared/messages'
 import MessageBubble from './MessageBubble'
+import TaskTimeline from './TaskTimeline'
 
 interface Message { id: string; role: 'user' | 'assistant'; content: string; agentName?: string; thinking?: string }
 
@@ -98,6 +99,7 @@ export default function ChatPanel() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
+  const [taskEvents, setTaskEvents] = useState<TaskEventPayload[]>([])
   const approvalResponderRef = useRef<((response: unknown) => void) | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -114,11 +116,15 @@ export default function ChatPanel() {
     }).catch(() => {})
   }, [])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, taskEvents])
 
 
   useEffect(() => {
     const listener = (message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+      if (isTaskEventMessage(message)) {
+        setTaskEvents(prev => [...prev, message.payload])
+        return false
+      }
       if (!isToolApprovalRequestMessage(message)) return false
       setPendingApproval({ requestId: message.requestId, payload: message.payload })
       approvalResponderRef.current = sendResponse
@@ -144,6 +150,7 @@ export default function ChatPanel() {
     if (!text || loading) return
     setInput('')
     setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }])
+    setTaskEvents([])
     setLoading(true)
     try {
       const response = await sendToWorker(MessageType.USER_MESSAGE, { text })
@@ -164,6 +171,7 @@ export default function ChatPanel() {
   async function handleClear() {
     await sendToWorker(MessageType.CLEAR_HISTORY, {})
     setMessages([])
+    setTaskEvents([])
   }
 
   return (
@@ -201,6 +209,7 @@ export default function ChatPanel() {
             Start a conversation with your agent
           </div>
         )}
+        <TaskTimeline events={taskEvents} />
         {messages.map(msg => <MessageBubble key={msg.id} role={msg.role} content={msg.content} agentName={msg.agentName} thinking={msg.thinking} />)}
         {loading && <MessageBubble role="assistant" content="Thinking…" />}
         <div ref={bottomRef} />

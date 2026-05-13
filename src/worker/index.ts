@@ -1,4 +1,5 @@
 import { MessageType } from '@shared/messages'
+import type { TaskEventPayload } from '@shared/messages'
 import type { LLMMessage, ProviderConfig, GeneralSettingsConfig } from '@shared/types'
 import { llmProviderStore, generalSettingsStore } from '../storage'
 import { Orchestrator } from './orchestrator'
@@ -32,6 +33,14 @@ let systemMemory: SystemMemoryManager
 let workingMemory: WorkingMemoryManager
 let orchestrator: Orchestrator
 let initPromise: Promise<void> | null = null
+
+function emitTaskEvent(payload: TaskEventPayload): void {
+  chrome.runtime.sendMessage({
+    type: MessageType.TASK_EVENT,
+    requestId: crypto.randomUUID(),
+    payload,
+  }).catch?.(() => {})
+}
 
 function waitForTab(tabId: number, timeout = 10000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -196,6 +205,7 @@ async function doInit() {
     workingMemory,
     episodicMemory,
     knowledgeStore,
+    emitTaskEvent,
   })
 }
 
