@@ -30,4 +30,16 @@ describe('KnowledgeStore', () => {
     await store.delete('temp')
     expect(await store.get('temp')).toBeUndefined()
   })
+
+  it('deletes by tag and domain and exports JSON', async () => {
+    await store.set('domain.entry', 'value', ['bulk'], 'example.com')
+    await store.set('tag.entry', 'value', ['bulk'], 'other.com')
+
+    expect(await store.deleteByDomain('example.com')).toBe(1)
+    expect(await store.get('domain.entry')).toBeUndefined()
+
+    expect(await store.deleteByTag('bulk')).toBeGreaterThanOrEqual(1)
+    expect(await store.get('tag.entry')).toBeUndefined()
+    expect(JSON.parse(await store.exportJson())).toBeInstanceOf(Array)
+  })
 })

@@ -15,6 +15,9 @@ const mockConfig: GeneralSettingsConfig = {
   defaultModel: 'claude-opus-4-7',
   maxToolCallsPerTask: 20,
   maxEpisodes: 100,
+  enableHistoryMemory: true,
+  enableBookmarkMemory: true,
+  memoryRetentionDays: 30,
 }
 
 vi.mock('./agent-runtime', () => ({

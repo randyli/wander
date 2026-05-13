@@ -6,6 +6,9 @@ export interface GeneralSettingsConfig {
   defaultModel: string
   maxToolCallsPerTask: number
   maxEpisodes: number
+  enableHistoryMemory: boolean
+  enableBookmarkMemory: boolean
+  memoryRetentionDays: number
 }
 
 export type GeneralSettingsStorage = BaseStorage<GeneralSettingsConfig> & {
@@ -19,6 +22,9 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettingsConfig = {
   defaultModel: 'claude-opus-4-7',
   maxToolCallsPerTask: 20,
   maxEpisodes: 100,
+  enableHistoryMemory: true,
+  enableBookmarkMemory: true,
+  memoryRetentionDays: 30,
 }
 
 const storage = createStorage<GeneralSettingsConfig>(

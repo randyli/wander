@@ -52,6 +52,28 @@ export class EpisodicMemory {
     })
   }
 
+  async deleteByTag(tag: string): Promise<number> {
+    const entries = await this.list()
+    const ids = entries.filter(e => e.tags.includes(tag)).map(e => e.id)
+    await Promise.all(ids.map(id => this.delete(id)))
+    return ids.length
+  }
+
+  async deleteByDomain(domain: string): Promise<number> {
+    const entries = await this.list()
+    const ids = entries.filter(e => e.domain === domain).map(e => e.id)
+    await Promise.all(ids.map(id => this.delete(id)))
+    return ids.length
+  }
+
+  async clear(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const req = this.db.transaction('episodes', 'readwrite').objectStore('episodes').clear()
+      req.onsuccess = () => resolve()
+      req.onerror = () => reject(req.error)
+    })
+  }
+
   async getRecent(count: number): Promise<Episode[]> {
     const all = await this.list()
     return all.sort((a, b) => b.createdAt - a.createdAt).slice(0, count)
@@ -63,5 +85,16 @@ export class EpisodicMemory {
     const sorted = all.sort((a, b) => a.createdAt - b.createdAt)
     const toDelete = sorted.slice(0, all.length - max)
     await Promise.all(toDelete.map(e => this.delete(e.id)))
+  }
+
+  async deleteOlderThan(cutoffTime: number): Promise<number> {
+    const all = await this.list()
+    const old = all.filter(e => e.createdAt < cutoffTime)
+    await Promise.all(old.map(e => this.delete(e.id)))
+    return old.length
+  }
+
+  async exportJson(): Promise<string> {
+    return JSON.stringify(await this.list(), null, 2)
   }
 }

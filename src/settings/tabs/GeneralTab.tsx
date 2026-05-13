@@ -118,6 +118,44 @@ export default function GeneralTab({ isDarkMode }: GeneralTabProps) {
           />
         </div>
 
+
+        {/* Memory Settings */}
+        <div className="space-y-4 border-t border-gray-200 pt-6 dark:border-gray-800">
+          <div>
+            <h3 className="text-sm font-semibold">Memory Settings</h3>
+            <p className="mt-1 text-xs opacity-60">Control which browser sources can be used for system memory and how long memory is retained.</p>
+          </div>
+          <label className="flex items-center justify-between gap-4 text-sm">
+            <span>Allow system memory to read history</span>
+            <input
+              type="checkbox"
+              checked={settings.enableHistoryMemory}
+              onChange={e => updateField('enableHistoryMemory', e.target.checked)}
+              className="h-4 w-4 accent-indigo-600"
+            />
+          </label>
+          <label className="flex items-center justify-between gap-4 text-sm">
+            <span>Allow system memory to read bookmarks</span>
+            <input
+              type="checkbox"
+              checked={settings.enableBookmarkMemory}
+              onChange={e => updateField('enableBookmarkMemory', e.target.checked)}
+              className="h-4 w-4 accent-indigo-600"
+            />
+          </label>
+          <div>
+            <label className="mb-2 block text-sm font-medium">Memory Retention Days</label>
+            <input
+              type="number"
+              min={1}
+              max={3650}
+              value={settings.memoryRetentionDays}
+              onChange={e => updateField('memoryRetentionDays', Math.max(1, Number(e.target.value)))}
+              className={`w-32 rounded-lg border px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 ${inputBg}`}
+            />
+          </div>
+        </div>
+
         {/* Reset */}
         <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-gray-800">
           <button
