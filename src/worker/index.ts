@@ -9,6 +9,7 @@ import { KnowledgeStore } from './memory/knowledge'
 import { SessionMemoryManager } from './memory/session'
 import { SystemMemoryManager } from './memory/system'
 import { WorkingMemoryManager } from './memory/working'
+import { createToolApprovalError, getToolRisk, requestToolApproval, requiresToolApproval } from './tool-approval'
 import orchestratorAgentMd from '../../agents/orchestrator.md?raw'
 import browserAgentMd from '../../agents/browser-agent.md?raw'
 import searchAgentMd from '../../agents/search-agent.md?raw'
@@ -92,7 +93,18 @@ async function doInit() {
     },
     executeToolCall: async (toolLlm, params) => {
       const tool = toolLlm.replace(/_/g, '.')
+      const approveToolCall = async (targetUrl?: string) => {
+        if (!requiresToolApproval(tool)) return null
+        const details = { tool, params, targetUrl, risk: getToolRisk(tool) }
+        const approval = await requestToolApproval(details)
+        if (approval.approved) return null
+        const code = approval.reason === 'Approval timed out' ? 'TOOL_APPROVAL_TIMEOUT' : 'TOOL_APPROVAL_DENIED'
+        return createToolApprovalError(details, code, approval.reason ?? 'Tool execution was rejected by the user')
+      }
+
       if (tool === 'history.search') {
+        const denied = await approveToolCall('chrome://history')
+        if (denied) return denied
         const { query = '', max_results = '20', days_back = '7' } = params as { query?: string; max_results?: string; days_back?: string }
         const startTime = Date.now() - Number(days_back) * 24 * 60 * 60 * 1000
         const items = await chrome.history.search({ text: query, startTime, maxResults: Number(max_results) })
@@ -115,6 +127,12 @@ async function doInit() {
         tab = tabs.find(t => t.url && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-extension://')) ?? tab
       }
       if (!tab?.id) throw new Error('No active tab')
+      const approvalTargetUrl = tool === 'nav.goto' ? String((params as { url?: unknown }).url ?? tab.url ?? '') : tab.url
+      if (requiresToolApproval(tool) && tab.windowId !== undefined) {
+        chrome.sidePanel?.open?.({ windowId: tab.windowId })?.catch?.(() => {})
+      }
+      const denied = await approveToolCall(approvalTargetUrl)
+      if (denied) return denied
       if (tool === 'page.screenshot') {
         return chrome.tabs.captureVisibleTab({ format: 'png' })
       }

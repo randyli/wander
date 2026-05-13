@@ -13,10 +13,13 @@ export interface ToolParameter {
   description?: string
 }
 
+export type ToolRisk = 'read' | 'navigate' | 'write' | 'submit' | 'sensitive'
+
 export interface Tool {
   name: string
   description: string
   parameters: Record<string, ToolParameter>
+  risk: ToolRisk
 }
 
 export interface ToolCall {

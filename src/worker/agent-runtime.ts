@@ -34,6 +34,7 @@ export class AgentRuntime {
       name,
       description: `Execute skill: ${name}`,
       parameters: {},
+      risk: 'read',
     }))
 
     const thinkingParts: string[] = []
