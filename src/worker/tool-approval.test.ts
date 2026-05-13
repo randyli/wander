@@ -2,15 +2,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MessageType } from '@shared/messages'
 import { createToolApprovalError, getToolRisk, requestToolApproval, requiresToolApproval } from './tool-approval'
 
+type SendMessageMock = {
+  mockReset: () => void
+  mockImplementation: (fn: (...args: unknown[]) => unknown) => void
+}
+
+function sendMessageMock(): SendMessageMock {
+  return chrome.runtime.sendMessage as unknown as SendMessageMock
+}
+
 describe('tool approval flow', () => {
   afterEach(() => {
     vi.useRealTimers()
-    vi.mocked(chrome.runtime.sendMessage).mockReset()
+    sendMessageMock().mockReset()
     chrome.runtime.lastError = undefined
   })
 
   it('allows an approved high-risk tool call', async () => {
-    vi.mocked(chrome.runtime.sendMessage).mockImplementation((message: unknown, callback?: (response: unknown) => void) => {
+    sendMessageMock().mockImplementation((...args: unknown[]) => {
+      const [message, callback] = args as [unknown, ((response: unknown) => void) | undefined]
       expect((message as { type: MessageType }).type).toBe(MessageType.TOOL_APPROVAL_REQUEST)
       callback?.({ type: MessageType.TOOL_APPROVAL_RESPONSE, payload: { approved: true } })
     })
@@ -24,7 +34,8 @@ describe('tool approval flow', () => {
   })
 
   it('returns a structured error when the user rejects a high-risk tool call', async () => {
-    vi.mocked(chrome.runtime.sendMessage).mockImplementation((_message: unknown, callback?: (response: unknown) => void) => {
+    sendMessageMock().mockImplementation((...args: unknown[]) => {
+      const [, callback] = args as [unknown, ((response: unknown) => void) | undefined]
       callback?.({ type: MessageType.TOOL_APPROVAL_RESPONSE, payload: { approved: false, reason: 'Rejected by user' } })
     })
 
@@ -52,7 +63,7 @@ describe('tool approval flow', () => {
 
   it('times out when the side panel does not respond', async () => {
     vi.useFakeTimers()
-    vi.mocked(chrome.runtime.sendMessage).mockImplementation(() => undefined)
+    sendMessageMock().mockImplementation(() => undefined)
 
     const approvalPromise = requestToolApproval({
       tool: 'page.screenshot',

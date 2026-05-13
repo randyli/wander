@@ -5,8 +5,12 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "npm run typecheck",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "e2e": "npm run build && node e2e/extension.e2e.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
