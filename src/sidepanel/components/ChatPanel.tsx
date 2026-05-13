@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { MessageType, isStreamChunkMessage, isTaskEventMessage, isToolApprovalRequestMessage } from '@shared/messages'
 import type { TaskEventPayload, ToolApprovalRequestMessage } from '@shared/messages'
+import { validateDefaultProviderConfig } from '@shared/providerConfig'
+import type { MissingProviderConfigError } from '@shared/providerConfig'
+import type { GeneralSettingsConfig, ProviderConfig } from '@shared/types'
 import MessageBubble from './MessageBubble'
 import TaskTimeline from './TaskTimeline'
 
@@ -16,7 +19,7 @@ interface ApprovalParamRow {
   value: string
 }
 
-type WorkerResponse = { payload: { text?: string; agentName?: string; thinking?: string; taskId?: string; conversationId?: string; history?: Array<{ role: string; content: string }>; ok?: boolean } } | { error: string }
+type WorkerResponse = { payload: unknown } | { error: string | MissingProviderConfigError }
 
 const TOOL_LABELS: Record<string, string> = {
   'dom.fill': '填写网页表单',
@@ -32,6 +35,40 @@ const RISK_LABELS: Record<ToolApprovalRequestMessage['payload']['risk'], { label
   write: { label: '写入', description: '会保存或修改数据。' },
   submit: { label: '提交', description: '可能向网站发送表单内容。' },
   sensitive: { label: '敏感', description: '可能读取或填写敏感信息。' },
+}
+
+
+function isMissingProviderConfigError(error: unknown): error is MissingProviderConfigError {
+  return typeof error === 'object' && error !== null && (error as MissingProviderConfigError).code === 'MISSING_PROVIDER_CONFIG'
+}
+
+function providerConfigReasonText(reason: MissingProviderConfigError['reason']): string {
+  switch (reason) {
+    case 'PROVIDER_NOT_FOUND': return '当前默认 provider 尚未配置。'
+    case 'PROVIDER_DISABLED': return '当前默认 provider 已停用。'
+    case 'API_KEY_MISSING': return '当前默认 provider 还没有填写 API Key。'
+    case 'MODEL_NOT_AVAILABLE': return '当前默认模型不在该 provider 的模型列表中。'
+  }
+}
+
+function ProviderConfigGuideCard({ error, onOpenSettings }: { error: MissingProviderConfigError; onOpenSettings: () => void }) {
+  return (
+    <div style={{ marginBottom: 12, padding: 14, border: '1px solid #f59e0b', borderRadius: 12, background: '#fffbeb', color: '#92400e', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>请先完成模型配置</div>
+      <div style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 10 }}>
+        {providerConfigReasonText(error.reason)}当前选择：provider <strong>{error.provider}</strong>，模型 <strong>{error.model || '未选择'}</strong>。
+      </div>
+      <ol style={{ margin: '0 0 12px 18px', padding: 0, fontSize: 13, lineHeight: 1.7 }}>
+        <li>打开设置页。</li>
+        <li>在 Providers 中选择并启用 provider。</li>
+        <li>填写 API Key。</li>
+        <li>在通用设置中选择该 provider 支持的模型。</li>
+      </ol>
+      <button onClick={onOpenSettings} style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', fontSize: 13 }}>
+        打开设置页
+      </button>
+    </div>
+  )
 }
 
 const PARAM_LABELS: Record<string, string> = {
@@ -103,6 +140,7 @@ export default function ChatPanel() {
   const [taskStatus, setTaskStatus] = useState<'idle' | 'running' | 'done' | 'cancelled' | 'error'>('idle')
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const [taskEvents, setTaskEvents] = useState<TaskEventPayload[]>([])
+  const [providerConfigError, setProviderConfigError] = useState<MissingProviderConfigError | null>(null)
   const approvalResponderRef = useRef<((response: unknown) => void) | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -159,9 +197,47 @@ export default function ChatPanel() {
     setPendingApproval(null)
   }
 
+  function openSettings() {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/settings/settings.html') })
+  }
+
+  async function checkProviderConfig(): Promise<MissingProviderConfigError | null> {
+    const [providersResponse, settingsResponse] = await Promise.all([
+      sendToWorker(MessageType.GET_PROVIDERS, {}),
+      sendToWorker(MessageType.GET_GENERAL_SETTINGS, {}),
+    ])
+    if ('error' in providersResponse) {
+      if (isMissingProviderConfigError(providersResponse.error)) return providersResponse.error
+      throw new Error(String(providersResponse.error))
+    }
+    if ('error' in settingsResponse) {
+      if (isMissingProviderConfigError(settingsResponse.error)) return settingsResponse.error
+      throw new Error(String(settingsResponse.error))
+    }
+    return validateDefaultProviderConfig(
+      settingsResponse.payload as GeneralSettingsConfig,
+      providersResponse.payload as Record<string, ProviderConfig>,
+    )
+  }
+
   async function handleSend() {
     const text = input.trim()
     if (!text || loading) return
+
+    try {
+      const configError = await checkProviderConfig()
+      if (configError) {
+        setProviderConfigError(configError)
+        setTaskStatus('error')
+        return
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: `无法读取模型配置：${err}` }])
+      setTaskStatus('error')
+      return
+    }
+
+    setProviderConfigError(null)
     setInput('')
     const taskId = crypto.randomUUID()
     setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }, { id: taskId, role: 'assistant', content: '', agentName: 'assistant' }])
@@ -171,12 +247,20 @@ export default function ChatPanel() {
     setLoading(true)
     try {
       const response = await sendToWorker(MessageType.USER_MESSAGE, { text, conversationId, taskId })
-      if ('error' in response) throw new Error(response.error)
+      if ('error' in response) {
+        if (isMissingProviderConfigError(response.error)) {
+          setProviderConfigError(response.error)
+          setTaskStatus('error')
+          return
+        }
+        throw new Error(String(response.error))
+      }
+      const responsePayload = response.payload as { text?: string; thinking?: string; agentName?: string }
       setMessages(prev => prev.map(msg => msg.id === taskId ? {
         ...msg,
-        content: msg.content || response.payload.text || '',
-        thinking: response.payload.thinking,
-        agentName: response.payload.agentName,
+        content: msg.content || responsePayload.text || '',
+        thinking: responsePayload.thinking,
+        agentName: responsePayload.agentName,
       } : msg))
       setTaskStatus('done')
     } catch (err) {
@@ -204,8 +288,9 @@ export default function ChatPanel() {
 
   async function handleNewConversation() {
     const response = await sendToWorker(MessageType.CREATE_CONVERSATION, {})
-    if ('payload' in response && response.payload.conversationId) {
-      setConversationId(response.payload.conversationId)
+    const responsePayload = 'payload' in response ? response.payload as { conversationId?: string } : null
+    if (responsePayload?.conversationId) {
+      setConversationId(responsePayload.conversationId)
       setMessages([])
       setTaskEvents([])
       setTaskStatus('idle')
@@ -252,6 +337,7 @@ export default function ChatPanel() {
             Start a conversation with your agent
           </div>
         )}
+        {providerConfigError && <ProviderConfigGuideCard error={providerConfigError} onOpenSettings={openSettings} />}
         <TaskTimeline events={taskEvents} />
         {messages.map(msg => <MessageBubble key={msg.id} role={msg.role} content={msg.content} agentName={msg.agentName} thinking={msg.thinking} />)}
         {loading && !messages.some(m => m.id === currentTaskId && m.content) && <MessageBubble role="assistant" content="Thinking…" />}
