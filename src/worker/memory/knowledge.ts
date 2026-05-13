@@ -2,10 +2,13 @@ import type { KnowledgeEntry } from '@shared/types'
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('multiagent-knowledge', 1)
+    const req = indexedDB.open('multiagent-knowledge', 2)
     req.onupgradeneeded = () => {
-      const store = req.result.createObjectStore('knowledge', { keyPath: 'key' })
-      store.createIndex('tags', 'tags', { multiEntry: true })
+      const store = req.result.objectStoreNames.contains('knowledge')
+        ? req.transaction!.objectStore('knowledge')
+        : req.result.createObjectStore('knowledge', { keyPath: 'key' })
+      if (!store.indexNames.contains('tags')) store.createIndex('tags', 'tags', { multiEntry: true })
+      if (!store.indexNames.contains('domain')) store.createIndex('domain', 'domain')
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -17,8 +20,8 @@ export class KnowledgeStore {
 
   async init(): Promise<void> { this.db = await openDB() }
 
-  async set(key: string, value: string, tags: string[]): Promise<void> {
-    const entry: KnowledgeEntry = { key, value, tags, updatedAt: Date.now() }
+  async set(key: string, value: string, tags: string[], domain?: string): Promise<void> {
+    const entry: KnowledgeEntry = { key, value, tags, domain, updatedAt: Date.now() }
     return new Promise((resolve, reject) => {
       const req = this.db.transaction('knowledge', 'readwrite').objectStore('knowledge').put(entry)
       req.onsuccess = () => resolve()
@@ -56,5 +59,31 @@ export class KnowledgeStore {
       req.onsuccess = () => resolve()
       req.onerror = () => reject(req.error)
     })
+  }
+
+  async deleteByTag(tag: string): Promise<number> {
+    const entries = await this.list()
+    const keys = entries.filter(e => e.tags.includes(tag)).map(e => e.key)
+    await Promise.all(keys.map(key => this.delete(key)))
+    return keys.length
+  }
+
+  async deleteByDomain(domain: string): Promise<number> {
+    const entries = await this.list()
+    const keys = entries.filter(e => e.domain === domain).map(e => e.key)
+    await Promise.all(keys.map(key => this.delete(key)))
+    return keys.length
+  }
+
+  async clear(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const req = this.db.transaction('knowledge', 'readwrite').objectStore('knowledge').clear()
+      req.onsuccess = () => resolve()
+      req.onerror = () => reject(req.error)
+    })
+  }
+
+  async exportJson(): Promise<string> {
+    return JSON.stringify(await this.list(), null, 2)
   }
 }

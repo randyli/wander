@@ -70,6 +70,7 @@ export interface KnowledgeEntry {
   key: string
   value: string
   tags: string[]
+  domain?: string
   updatedAt: number
 }
 
@@ -86,6 +87,9 @@ export interface GeneralSettingsConfig {
   defaultModel: string
   maxToolCallsPerTask: number
   maxEpisodes: number
+  enableHistoryMemory: boolean
+  enableBookmarkMemory: boolean
+  memoryRetentionDays: number
 }
 
 export interface TaskState {

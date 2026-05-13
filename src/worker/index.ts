@@ -91,6 +91,9 @@ async function doInit() {
         defaultModel: settings.defaultModel,
         maxToolCallsPerTask: settings.maxToolCallsPerTask,
         maxEpisodes: settings.maxEpisodes,
+        enableHistoryMemory: settings.enableHistoryMemory,
+        enableBookmarkMemory: settings.enableBookmarkMemory,
+        memoryRetentionDays: settings.memoryRetentionDays,
       }
     },
     loadHistory: async () => {
@@ -120,8 +123,8 @@ async function doInit() {
         return items.map(h => ({ title: h.title, url: h.url, lastVisit: new Date(h.lastVisitTime ?? 0).toLocaleString() }))
       }
       if (tool === 'memory.set') {
-        const { key, value, tags } = params as { key: string; value: string; tags?: string }
-        await knowledgeStore.set(key, value, tags ? tags.split(',').map(t => t.trim()) : [])
+        const { key, value, tags, domain } = params as { key: string; value: string; tags?: string; domain?: string }
+        await knowledgeStore.set(key, value, tags ? tags.split(',').map(t => t.trim()) : [], domain)
         return { ok: true }
       }
       if (tool === 'memory.get') {
@@ -228,7 +231,10 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(() => {
   init().then(() => {
     triggerSystemMemoryBuild()
-    generalSettingsStore.getSettings().then(s => episodicMemory.evict(s.maxEpisodes).catch(() => {}))
+    generalSettingsStore.getSettings().then(s => {
+      episodicMemory.evict(s.maxEpisodes).catch(() => {})
+      episodicMemory.deleteOlderThan(Date.now() - s.memoryRetentionDays * 24 * 60 * 60 * 1000).catch(() => {})
+    })
   })
 })
 
@@ -244,7 +250,11 @@ function triggerSystemMemoryBuild() {
     if (!key) return
     const { getLLMClient } = await import('./llm/client')
     const client = getLLMClient(provider, { apiKey: key, model: settings.defaultModel })
-    systemMemory.buildIfStale(client).catch(() => {})
+    systemMemory.buildIfStale(client, {
+      enableHistoryMemory: settings.enableHistoryMemory,
+      enableBookmarkMemory: settings.enableBookmarkMemory,
+      memoryRetentionDays: settings.memoryRetentionDays,
+    }).catch(() => {})
   }).catch(() => {})
 }
 
@@ -293,11 +303,29 @@ async function handleMessage(message: { type: MessageType; requestId: string; pa
     case MessageType.DELETE_EPISODE:
       await episodicMemory.delete((payload as { id: string }).id)
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
+    case MessageType.DELETE_EPISODES_BY_TAG:
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true, deleted: await episodicMemory.deleteByTag((payload as { tag: string }).tag) } }
+    case MessageType.DELETE_EPISODES_BY_DOMAIN:
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true, deleted: await episodicMemory.deleteByDomain((payload as { domain: string }).domain) } }
+    case MessageType.CLEAR_EPISODES:
+      await episodicMemory.clear()
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
+    case MessageType.EXPORT_EPISODES:
+      return { type: MessageType.RESPONSE, requestId, payload: await episodicMemory.exportJson() }
     case MessageType.LIST_KNOWLEDGE:
       return { type: MessageType.RESPONSE, requestId, payload: await knowledgeStore.list() }
     case MessageType.DELETE_KNOWLEDGE:
       await knowledgeStore.delete((payload as { key: string }).key)
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
+    case MessageType.DELETE_KNOWLEDGE_BY_TAG:
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true, deleted: await knowledgeStore.deleteByTag((payload as { tag: string }).tag) } }
+    case MessageType.DELETE_KNOWLEDGE_BY_DOMAIN:
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true, deleted: await knowledgeStore.deleteByDomain((payload as { domain: string }).domain) } }
+    case MessageType.CLEAR_KNOWLEDGE:
+      await knowledgeStore.clear()
+      return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
+    case MessageType.EXPORT_KNOWLEDGE:
+      return { type: MessageType.RESPONSE, requestId, payload: await knowledgeStore.exportJson() }
     case MessageType.GET_SESSION_MEMORY:
       return { type: MessageType.RESPONSE, requestId, payload: sessionMemory.get() ?? null }
     case MessageType.GET_SYSTEM_MEMORY:

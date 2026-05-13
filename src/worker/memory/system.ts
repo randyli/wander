@@ -3,17 +3,33 @@ import type { LLMClient } from '../llm/client'
 export interface SystemMemoryData {
   profile: string
   builtAt: number
+  sources: {
+    history: boolean
+    bookmarks: boolean
+  }
+}
+
+export interface SystemMemoryBuildOptions {
+  enableHistoryMemory: boolean
+  enableBookmarkMemory: boolean
+  memoryRetentionDays: number
 }
 
 const STORAGE_KEY = 'systemMemory'
 const STALE_MS = 24 * 60 * 60 * 1000
+const DEFAULT_BUILD_OPTIONS: SystemMemoryBuildOptions = {
+  enableHistoryMemory: true,
+  enableBookmarkMemory: true,
+  memoryRetentionDays: 30,
+}
 
 export class SystemMemoryManager {
   private data: SystemMemoryData | null = null
 
   async load(): Promise<void> {
     const result = await chrome.storage.local.get(STORAGE_KEY)
-    this.data = (result[STORAGE_KEY] as SystemMemoryData) ?? null
+    const data = result[STORAGE_KEY] as (SystemMemoryData & { sources?: SystemMemoryData['sources'] }) | undefined
+    this.data = data ? { ...data, sources: data.sources ?? { history: true, bookmarks: true } } : null
   }
 
   isStale(): boolean {
@@ -21,12 +37,23 @@ export class SystemMemoryManager {
     return Date.now() - this.data.builtAt > STALE_MS
   }
 
-  async buildIfStale(client: LLMClient): Promise<void> {
+  async buildIfStale(client: LLMClient, options: Partial<SystemMemoryBuildOptions> = {}): Promise<void> {
+    const buildOptions = { ...DEFAULT_BUILD_OPTIONS, ...options }
     if (!this.isStale()) return
+    if (!buildOptions.enableHistoryMemory && !buildOptions.enableBookmarkMemory) return
+
     try {
       const [historyItems, bookmarkTree] = await Promise.all([
-        chrome.history.search({ text: '', maxResults: 200, startTime: Date.now() - 30 * 24 * 60 * 60 * 1000 }),
-        chrome.bookmarks.getTree(),
+        buildOptions.enableHistoryMemory
+          ? chrome.history.search({
+            text: '',
+            maxResults: 200,
+            startTime: Date.now() - buildOptions.memoryRetentionDays * 24 * 60 * 60 * 1000,
+          })
+          : Promise.resolve([] as chrome.history.HistoryItem[]),
+        buildOptions.enableBookmarkMemory
+          ? chrome.bookmarks.getTree()
+          : Promise.resolve([] as chrome.bookmarks.BookmarkTreeNode[]),
       ])
 
       // Extract top domains by visit count
@@ -52,17 +79,27 @@ export class SystemMemoryManager {
       }
       extractTitles(bookmarkTree)
 
-      const prompt = `Based on the user's browser data, write a 2-3 sentence user profile in Chinese describing their interests, work type, and common online activities.
+      const prompt = `Based on the enabled browser memory sources, write a 2-3 sentence user profile in Chinese describing their interests, work type, and common online activities.
 
-Top visited domains: ${topDomains.join(', ')}
-Bookmarks (sample): ${bookmarkTitles.slice(0, 50).join(' / ')}
+History memory enabled: ${buildOptions.enableHistoryMemory}
+Bookmark memory enabled: ${buildOptions.enableBookmarkMemory}
+Retention window (days): ${buildOptions.memoryRetentionDays}
+Top visited domains: ${topDomains.join(', ') || '(disabled or empty)'}
+Bookmarks (sample): ${bookmarkTitles.slice(0, 50).join(' / ') || '(disabled or empty)'}
 
 Respond with a plain profile text only, no JSON, no headers.`
 
       const response = await client.chat([{ role: 'user', content: prompt }])
       const profile = response.content.trim()
       if (profile) {
-        this.data = { profile, builtAt: Date.now() }
+        this.data = {
+          profile,
+          builtAt: Date.now(),
+          sources: {
+            history: buildOptions.enableHistoryMemory,
+            bookmarks: buildOptions.enableBookmarkMemory,
+          },
+        }
         await chrome.storage.local.set({ [STORAGE_KEY]: this.data })
       }
     } catch {
@@ -76,6 +113,10 @@ Respond with a plain profile text only, no JSON, no headers.`
 
   getContextString(): string {
     if (!this.data?.profile) return ''
-    return `**User Profile:**\n${this.data.profile}`
+    const sources = [
+      this.data.sources.history ? 'history' : null,
+      this.data.sources.bookmarks ? 'bookmarks' : null,
+    ].filter(Boolean).join(', ')
+    return `**Source: system**\nUser profile (${sources || 'none'}):\n${this.data.profile}`
   }
 }

@@ -13,6 +13,12 @@ const chromeMock = {
     create: vi.fn(),
     captureVisibleTab: vi.fn(),
   },
+  history: {
+    search: vi.fn(),
+  },
+  bookmarks: {
+    getTree: vi.fn(),
+  },
   storage: {
     local: {
       get: vi.fn(),

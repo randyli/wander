@@ -13,6 +13,9 @@ const config: GeneralSettingsConfig = {
   defaultModel: 'claude-opus-4-7',
   maxToolCallsPerTask: 10,
   maxEpisodes: 100,
+  enableHistoryMemory: true,
+  enableBookmarkMemory: true,
+  memoryRetentionDays: 30,
 }
 
 const orchestratorAgent: AgentDef = {

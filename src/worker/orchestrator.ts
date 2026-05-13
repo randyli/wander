@@ -81,7 +81,12 @@ async function buildMemoryContext(
   sess: SessionMemoryManager,
   opts?: { episodicMemory?: EpisodicMemory; knowledgeStore?: KnowledgeStore; userMessage?: string },
 ): Promise<string> {
-  const parts = [sys.getContextString(), sess.getContextString()].filter(Boolean)
+  const parts: string[] = []
+  const systemContext = sys.getContextString()
+  if (systemContext) parts.push(systemContext.startsWith('**Source: system**') ? systemContext : `**Source: system**\n${systemContext}`)
+
+  const sessionContext = sess.getContextString()
+  if (sessionContext) parts.push(sessionContext.startsWith('**Source: session**') ? sessionContext : `**Source: session**\n${sessionContext}`)
 
   if (opts?.userMessage) {
     const keywords = extractKeywords(opts.userMessage)
@@ -96,11 +101,11 @@ async function buildMemoryContext(
           if (lines.length >= 5) break
           if (!seen.has(ep.id)) {
             seen.add(ep.id)
-            lines.push(`- ${ep.summary} (${ep.domain})`)
+            lines.push(`- [episode] ${ep.summary} (domain: ${ep.domain}; tags: ${ep.tags.join(', ') || 'none'})`)
           }
         }
       }
-      if (lines.length > 0) parts.push(`**Relevant History:**\n${lines.join('\n')}`)
+      if (lines.length > 0) parts.push(`**Source: episode**\nRelevant history:\n${lines.join('\n')}`)
     }
 
     if (opts.knowledgeStore) {
@@ -113,11 +118,12 @@ async function buildMemoryContext(
           if (lines.length >= 5) break
           if (!seen.has(entry.key)) {
             seen.add(entry.key)
-            lines.push(`- ${entry.key}: ${entry.value.slice(0, 100)}`)
+            const domain = entry.domain ? `; domain: ${entry.domain}` : ''
+            lines.push(`- [knowledge] ${entry.key}: ${entry.value.slice(0, 100)} (tags: ${entry.tags.join(', ') || 'none'}${domain})`)
           }
         }
       }
-      if (lines.length > 0) parts.push(`**Known Facts:**\n${lines.join('\n')}`)
+      if (lines.length > 0) parts.push(`**Source: knowledge**\nKnown facts:\n${lines.join('\n')}`)
     }
   }
 

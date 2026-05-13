@@ -29,4 +29,16 @@ describe('EpisodicMemory', () => {
     await episodic.delete(id)
     expect((await episodic.list()).find(e => e.id === id)).toBeUndefined()
   })
+
+  it('deletes by tag and domain and exports JSON', async () => {
+    await episodic.save({ summary: 'Domain delete', domain: 'example.com', tags: ['bulk'] })
+    await episodic.save({ summary: 'Tag delete', domain: 'other.com', tags: ['bulk'] })
+
+    expect(await episodic.deleteByDomain('example.com')).toBe(1)
+    expect((await episodic.list()).some(e => e.domain === 'example.com')).toBe(false)
+
+    expect(await episodic.deleteByTag('bulk')).toBeGreaterThanOrEqual(1)
+    expect((await episodic.list()).some(e => e.tags.includes('bulk'))).toBe(false)
+    expect(JSON.parse(await episodic.exportJson())).toBeInstanceOf(Array)
+  })
 })
