@@ -53,4 +53,33 @@ describe('AgentRuntime', () => {
     })
     await expect(runtime.run('loop', 'task-3')).rejects.toThrow('Max tool calls')
   })
+
+  it('does not execute later tool calls after cancellation', async () => {
+    const controller = new AbortController()
+    const executeToolCall = vi.fn().mockImplementation(async () => {
+      controller.abort()
+      return 'first result'
+    })
+    const runtime = new AgentRuntime({
+      agent: mockAgent,
+      client: makeMockClient([
+        {
+          content: '',
+          toolCalls: [
+            { id: 'c1', name: 'dom.getText', params: { step: 1 } },
+            { id: 'c2', name: 'dom.click', params: { step: 2 } },
+          ],
+          stopReason: 'tool_use',
+        },
+      ]),
+      executeToolCall,
+      maxToolCalls: 10,
+      signal: controller.signal,
+    })
+
+    await expect(runtime.run('cancel midway', 'task-cancel')).rejects.toThrow('Task cancelled')
+    expect(executeToolCall).toHaveBeenCalledTimes(1)
+    expect(executeToolCall).not.toHaveBeenCalledWith('dom.click', { step: 2 })
+  })
+
 })

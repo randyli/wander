@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { LLMMessage, Tool, LLMResponse, ToolCall } from '@shared/types'
-import type { LLMClient, LLMClientOptions } from './client'
+import type { LLMClient, LLMClientOptions, LLMStreamOptions } from './client'
 
 export class ClaudeClient implements LLMClient {
   private anthropic: Anthropic
@@ -11,7 +11,7 @@ export class ClaudeClient implements LLMClient {
     this.model = model
   }
 
-  async chat(messages: LLMMessage[], tools: Tool[] = []): Promise<LLMResponse> {
+  async chat(messages: LLMMessage[], tools: Tool[] = [], _options: { signal?: AbortSignal } = {}): Promise<LLMResponse> {
     const systemMsg = messages.find(m => m.role === 'system')
     const anthropicMessages = messages.filter(m => m.role !== 'system').map(m => {
       if (m.role === 'tool' && !m.toolCallId) {
@@ -60,4 +60,13 @@ export class ClaudeClient implements LLMClient {
         : 'end_turn',
     }
   }
+
+  async streamChat(messages: LLMMessage[], tools: Tool[] = [], options: LLMStreamOptions = {}): Promise<LLMResponse> {
+    // Anthropic streaming with tool use has provider-specific block assembly; keep the
+    // normal response path as a safe fallback while still exposing the streaming contract.
+    const response = await this.chat(messages, tools, { signal: options.signal })
+    if (response.content) options.onChunk?.(response.content)
+    return response
+  }
+
 }
