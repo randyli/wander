@@ -83,8 +83,8 @@ export interface ProviderConfig {
 }
 
 export interface GeneralSettingsConfig {
-  defaultProvider: string
-  defaultModel: string
+  provider: string
+  model: string
   maxToolCallsPerTask: number
   maxEpisodes: number
   enableHistoryMemory: boolean

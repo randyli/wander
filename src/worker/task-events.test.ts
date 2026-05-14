@@ -12,8 +12,8 @@ vi.mock('./llm/client', () => ({
 }))
 
 const config: GeneralSettingsConfig = {
-  defaultProvider: 'claude',
-  defaultModel: 'claude-opus-4-7',
+  provider: 'claude',
+  model: 'claude-opus-4-7',
   maxToolCallsPerTask: 10,
   maxEpisodes: 100,
   enableHistoryMemory: true,

@@ -1,7 +1,7 @@
 import { MessageType } from '@shared/messages'
 import type { TaskEventPayload } from '@shared/messages'
 import type { LLMMessage, ProviderConfig, GeneralSettingsConfig } from '@shared/types'
-import { validateDefaultProviderConfig } from '@shared/providerConfig'
+import { validateSelectedProviderConfig } from '@shared/providerConfig'
 import { llmProviderStore, generalSettingsStore } from '../storage'
 import { Orchestrator } from './orchestrator'
 import { SkillRegistry } from './skill-registry'
@@ -102,8 +102,8 @@ async function doInit() {
     getConfig: async () => {
       const settings = await generalSettingsStore.getSettings()
       return {
-        defaultProvider: settings.defaultProvider,
-        defaultModel: settings.defaultModel,
+        provider: settings.provider,
+        model: settings.model,
         maxToolCallsPerTask: settings.maxToolCallsPerTask,
         maxEpisodes: settings.maxEpisodes,
         enableHistoryMemory: settings.enableHistoryMemory,
@@ -257,16 +257,12 @@ chrome.runtime.onStartup.addListener(() => {
 
 function triggerSystemMemoryBuild() {
   generalSettingsStore.getSettings().then(async (settings) => {
-    const provider = settings.defaultModel.toLowerCase().startsWith('gpt') ? 'openai'
-      : settings.defaultModel.toLowerCase().startsWith('gemini') ? 'gemini'
-      : settings.defaultModel.toLowerCase().startsWith('deepseek') ? 'deepseek'
-      : settings.defaultModel.toLowerCase().startsWith('qwen') ? 'qwen'
-      : 'claude'
+    const provider = settings.provider
     const config = await llmProviderStore.getProvider(provider)
     const key = config?.apiKey ?? ''
     if (!key) return
     const { getLLMClient } = await import('./llm/client')
-    const client = getLLMClient(provider, { apiKey: key, model: settings.defaultModel })
+    const client = getLLMClient(provider, { apiKey: key, model: settings.model })
     systemMemory.buildIfStale(client, {
       enableHistoryMemory: settings.enableHistoryMemory,
       enableBookmarkMemory: settings.enableBookmarkMemory,
@@ -298,7 +294,7 @@ export async function handleMessage(message: { type: MessageType; requestId: str
       const { text, conversationId = activeConversationId, taskId = crypto.randomUUID() } = payload as { text: string; conversationId?: string; taskId?: string }
       const settings = await generalSettingsStore.getSettings()
       const providers = await llmProviderStore.getAllProviders()
-      const configError = validateDefaultProviderConfig(settings, providers)
+      const configError = validateSelectedProviderConfig(settings, providers)
       if (configError) return { type: MessageType.RESPONSE, requestId, error: configError }
       activeConversationId = conversationId
       const result = await orchestrator.handleUserMessage(taskId, text, conversationId)

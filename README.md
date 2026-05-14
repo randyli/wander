@@ -40,7 +40,7 @@ The e2e script launches Chrome/Chromium with `dist/` loaded, verifies the extens
 3. Enable **Developer mode**.
 4. Click **Load unpacked** and select the generated `dist/` directory.
 5. Pin or click the Wander extension action to open the side panel.
-6. Configure provider API keys and default model in the settings page before issuing agent tasks.
+6. Choose a provider and model, then enter that provider's API key in the settings page before issuing agent tasks.
 
 ## Architecture
 
