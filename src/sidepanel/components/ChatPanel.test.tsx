@@ -129,6 +129,30 @@ describe('ChatPanel provider preflight', () => {
     expect(container.textContent).toContain('打开设置页')
   })
 
+  it('restores focus to the message input after sending successfully', async () => {
+    installChatPanelSendMessageMock('test-api-key')
+
+    await act(async () => {
+      root.render(<ChatPanel />)
+    })
+
+    const input = getMessageInput(container)
+    await act(async () => {
+      input.focus()
+      Simulate.change(input, { target: { value: '你好' } } as any)
+    })
+
+    const sendButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Send')
+    expect(sendButton).toBeTruthy()
+    await act(async () => {
+      Simulate.click(sendButton!)
+      await Promise.resolve()
+    })
+
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+  })
+
   it('does not send a user message when Enter is pressed during composition', async () => {
     installChatPanelSendMessageMock('test-api-key')
 
