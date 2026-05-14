@@ -81,3 +81,7 @@ Run `npm run e2e` when Chrome/Chromium is available to validate the packaged ext
 - [ ] Confirm `manifest.json` version, permissions, host permissions, and extension description are correct for the release.
 - [ ] Remove local secrets, test agents, and development-only artifacts from the package.
 - [ ] Prepare store listing notes, screenshots, and privacy disclosures before uploading the release artifact.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
