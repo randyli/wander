@@ -13,11 +13,12 @@ function getMessageInput(container: HTMLElement): HTMLTextAreaElement {
   return input!
 }
 
-function installChatPanelSendMessageMock(apiKey = '', keepUserMessagePending = false) {
+function installChatPanelSendMessageMock(apiKey = '', keepUserMessagePending = false, quickActions: Array<{ label: string; prompt: string }> = []) {
   const sendMessageMock = vi.mocked(chrome.runtime.sendMessage as any)
   sendMessageMock.mockReset()
   sendMessageMock.mockImplementation((message: any, callback?: (response: unknown) => void) => {
     if (message.type === MessageType.GET_HISTORY) callback?.({ type: MessageType.RESPONSE, requestId: message.requestId, payload: [] })
+    else if (message.type === MessageType.GET_QUICK_ACTIONS) callback?.({ type: MessageType.RESPONSE, requestId: message.requestId, payload: { actions: quickActions } })
     else if (message.type === MessageType.GET_PROVIDERS) callback?.({
       type: MessageType.RESPONSE,
       requestId: message.requestId,
@@ -103,6 +104,43 @@ describe('ChatPanel provider preflight', () => {
     container.remove()
   })
 
+  it('renders dynamic quick action buttons returned by the worker', async () => {
+    installChatPanelSendMessageMock('', false, [
+      { label: '关注 React', prompt: '请整理 React 近期重点信息。' },
+      { label: '关注 AI', prompt: '请整理 AI 近期重点信息。' },
+    ])
+
+    await act(async () => {
+      root.render(<ChatPanel />)
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[aria-label="快捷动作：关注 React"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="快捷动作：关注 AI"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="快捷动作：看新闻"]')).toBeFalsy()
+
+    const input = getMessageInput(container)
+    const reactButton = container.querySelector<HTMLButtonElement>('[aria-label="快捷动作：关注 React"]')
+    await act(async () => {
+      Simulate.click(reactButton!)
+    })
+
+    expect(input.value).toBe('请整理 React 近期重点信息。')
+  })
+
+  it('falls back to default quick actions when the worker returns an empty list', async () => {
+    installChatPanelSendMessageMock('', false, [])
+
+    await act(async () => {
+      root.render(<ChatPanel />)
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[aria-label="快捷动作：看新闻"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="快捷动作：找工作"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="快捷动作：总结当前页"]')).toBeTruthy()
+  })
+
   it('renders quick action buttons and fills the input with focus when clicked', async () => {
     await act(async () => {
       root.render(<ChatPanel />)
@@ -147,7 +185,10 @@ describe('ChatPanel provider preflight', () => {
   })
 
   it('disables quick action buttons while a message is loading', async () => {
-    installChatPanelSendMessageMock('test-api-key', true)
+    installChatPanelSendMessageMock('test-api-key', true, [
+      { label: '关注 React', prompt: '请整理 React 近期重点信息。' },
+      { label: '关注 AI', prompt: '请整理 AI 近期重点信息。' },
+    ])
 
     await act(async () => {
       root.render(<ChatPanel />)
@@ -166,7 +207,7 @@ describe('ChatPanel provider preflight', () => {
       await Promise.resolve()
     })
 
-    const quickButtons = ['看新闻', '找工作', '总结当前页'].map(label => {
+    const quickButtons = ['关注 React', '关注 AI'].map(label => {
       const button = container.querySelector<HTMLButtonElement>(`[aria-label="快捷动作：${label}"]`)
       expect(button).toBeTruthy()
       return button!

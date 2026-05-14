@@ -32,6 +32,7 @@ export enum MessageType {
   SET_PROVIDER = 'SET_PROVIDER',
   REMOVE_PROVIDER = 'REMOVE_PROVIDER',
   GET_GENERAL_SETTINGS = 'GET_GENERAL_SETTINGS',
+  GET_QUICK_ACTIONS = 'GET_QUICK_ACTIONS',
   UPDATE_GENERAL_SETTINGS = 'UPDATE_GENERAL_SETTINGS',
   RESET_GENERAL_SETTINGS = 'RESET_GENERAL_SETTINGS',
   AGENT_MESSAGE = 'AGENT_MESSAGE',
@@ -122,6 +123,20 @@ export interface ResponseMessage extends BaseMessage {
   payload: unknown
 }
 
+export interface QuickAction {
+  label: string
+  prompt: string
+}
+
+export interface GetQuickActionsMessage extends BaseMessage {
+  type: MessageType.GET_QUICK_ACTIONS
+  payload?: Record<string, never>
+}
+
+export interface QuickActionsPayload {
+  actions: QuickAction[]
+}
+
 export interface ToolApprovalRequestMessage extends BaseMessage {
   type: MessageType.TOOL_APPROVAL_REQUEST
   payload: { tool: string; params: Record<string, unknown>; targetUrl?: string; risk: ToolRisk }
@@ -135,7 +150,7 @@ export interface ToolApprovalResponseMessage extends BaseMessage {
 export type ChromeMessage =
   | UserMessage | StreamChunkMessage | CancelTaskMessage | CreateConversationMessage | SwitchConversationMessage
   | AgentMessage | ToolCallMessage | ToolResultMessage | TaskEventMessage | ResponseMessage
-  | ToolApprovalRequestMessage | ToolApprovalResponseMessage
+  | GetQuickActionsMessage | ToolApprovalRequestMessage | ToolApprovalResponseMessage
 
 export function isToolCallMessage(msg: unknown): msg is ToolCallMessage {
   return (msg as BaseMessage)?.type === MessageType.TOOL_CALL
