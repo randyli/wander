@@ -343,12 +343,30 @@ export default function ChatPanel() {
         <div ref={bottomRef} />
       </div>
       <div style={{ padding: '8px 16px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8 }}>
-        <input
+        <textarea
+          aria-label="Message your agent"
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handleSend()
+            }
+          }}
           placeholder="Message your agent…"
-          style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, outline: 'none' }}
+          style={{
+            flex: 1,
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid #d1d5db',
+            fontSize: 14,
+            outline: 'none',
+            resize: 'none',
+            minHeight: 40,
+            maxHeight: 120,
+            lineHeight: 1.5,
+            overflowY: 'auto',
+          }}
         />
         <button
           onClick={handleSend}
