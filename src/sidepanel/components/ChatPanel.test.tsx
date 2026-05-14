@@ -96,7 +96,7 @@ describe('ChatPanel provider preflight', () => {
       root.render(<ChatPanel />)
     })
 
-    const input = container.querySelector('input')
+    const input = container.querySelector('textarea[aria-label="Message your agent"]')
     expect(input).toBeTruthy()
     await act(async () => {
       Simulate.change(input!, { target: { value: '你好' } } as any)
