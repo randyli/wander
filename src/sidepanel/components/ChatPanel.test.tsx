@@ -5,6 +5,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MessageType } from '@shared/messages'
 import ChatPanel, { getApprovalParamRows, getApprovalRiskLabel, getApprovalToolLabel } from './ChatPanel'
 
+const MESSAGE_INPUT_ARIA_LABEL = 'Message your agent'
+
+function getMessageInput(container: HTMLElement): HTMLTextAreaElement {
+  const input = container.querySelector<HTMLTextAreaElement>(`[aria-label="${MESSAGE_INPUT_ARIA_LABEL}"]`)
+  expect(input).toBeTruthy()
+  return input!
+}
+
 function installChatPanelSendMessageMock(apiKey = '') {
   const sendMessageMock = vi.mocked(chrome.runtime.sendMessage as any)
   sendMessageMock.mockReset()
@@ -100,10 +108,9 @@ describe('ChatPanel provider preflight', () => {
       root.render(<ChatPanel />)
     })
 
-    const input = container.querySelector('textarea[aria-label="Message your agent"]')
-    expect(input).toBeTruthy()
+    const input = getMessageInput(container)
     await act(async () => {
-      Simulate.change(input!, { target: { value: '你好' } } as any)
+      Simulate.change(input, { target: { value: '你好' } } as any)
     })
 
     const sendButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Send')
@@ -129,10 +136,9 @@ describe('ChatPanel provider preflight', () => {
       root.render(<ChatPanel />)
     })
 
-    const input = container.querySelector('textarea[aria-label="Message your agent"]')
-    expect(input).toBeTruthy()
+    const input = getMessageInput(container)
     await act(async () => {
-      Simulate.change(input!, { target: { value: '你好' } } as any)
+      Simulate.change(input, { target: { value: '你好' } } as any)
     })
 
     const enterDuringComposition = new KeyboardEvent('keydown', {
@@ -143,7 +149,7 @@ describe('ChatPanel provider preflight', () => {
     Object.defineProperty(enterDuringComposition, 'isComposing', { value: true })
 
     await act(async () => {
-      input!.dispatchEvent(enterDuringComposition)
+      input.dispatchEvent(enterDuringComposition)
       await Promise.resolve()
     })
 
