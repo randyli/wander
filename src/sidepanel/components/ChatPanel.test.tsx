@@ -122,6 +122,30 @@ describe('ChatPanel provider preflight', () => {
     expect(document.activeElement).toBe(input)
   })
 
+  it('uses the current local date in the news quick action prompt', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'))
+
+    try {
+      await act(async () => {
+        root.render(<ChatPanel />)
+      })
+
+      const newsButton = container.querySelector<HTMLButtonElement>('[aria-label="快捷动作：看新闻"]')
+      expect(newsButton).toBeTruthy()
+
+      const input = getMessageInput(container)
+      await act(async () => {
+        Simulate.click(newsButton!)
+      })
+
+      expect(input.value).toContain('今天（2026年5月14日）')
+      expect(input.value).toContain('仅使用2026年5月14日发布或更新的来源')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('disables quick action buttons while a message is loading', async () => {
     installChatPanelSendMessageMock('test-api-key', true)
 

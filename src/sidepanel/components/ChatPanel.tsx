@@ -30,18 +30,27 @@ const TOOL_LABELS: Record<string, string> = {
   'page.screenshot': '截取当前页面',
 }
 
+function formatLocalDateForPrompt(date: Date): string {
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+}
+
+function getTodayNewsPrompt(date = new Date()): string {
+  const today = formatLocalDateForPrompt(date)
+  return `请帮我搜索并总结今天（${today}）的重要新闻，仅使用${today}发布或更新的来源，并按要点列出来源和影响。`
+}
+
 const QUICK_ACTIONS = [
   {
     label: '看新闻',
-    prompt: '请帮我搜索并总结今天的重要新闻，按要点列出来源和影响。',
+    getPrompt: getTodayNewsPrompt,
   },
   {
     label: '找工作',
-    prompt: '请根据我的个人资料和偏好，帮我寻找适合的远程工作机会。',
+    getPrompt: () => '请根据我的个人资料和偏好，帮我寻找适合的远程工作机会。',
   },
   {
     label: '总结当前页',
-    prompt: '请阅读并总结当前页面，提炼核心观点、关键数据和可执行事项。',
+    getPrompt: () => '请阅读并总结当前页面，提炼核心观点、关键数据和可执行事项。',
   },
 ]
 
@@ -383,7 +392,7 @@ export default function ChatPanel() {
               type="button"
               aria-label={`快捷动作：${action.label}`}
               title={`快捷动作：${action.label}`}
-              onClick={() => handleQuickAction(action.prompt)}
+              onClick={() => handleQuickAction(action.getPrompt())}
               disabled={loading}
               style={{ padding: '6px 10px', borderRadius: 999, border: '1px solid #d1d5db', background: '#fff', color: '#374151', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1, fontSize: 12 }}
             >
