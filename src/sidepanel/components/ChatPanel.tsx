@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import type { KeyboardEvent } from 'react'
 import { MessageType, isStreamChunkMessage, isTaskEventMessage, isToolApprovalRequestMessage } from '@shared/messages'
 import type { TaskEventPayload, ToolApprovalRequestMessage } from '@shared/messages'
 import { validateSelectedProviderConfig } from '@shared/providerConfig'
@@ -271,6 +272,14 @@ export default function ChatPanel() {
     }
   }
 
+  function handleInputKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
   async function handleClear() {
     await sendToWorker(MessageType.CLEAR_HISTORY, { conversationId })
     setMessages([])
@@ -347,12 +356,7 @@ export default function ChatPanel() {
           aria-label="Message your agent"
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
-            }
-          }}
+          onKeyDown={handleInputKeyDown}
           placeholder="Message your agent…"
           style={{
             flex: 1,
