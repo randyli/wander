@@ -13,7 +13,7 @@ function getMessageInput(container: HTMLElement): HTMLTextAreaElement {
   return input!
 }
 
-function installChatPanelSendMessageMock(apiKey = '') {
+function installChatPanelSendMessageMock(apiKey = '', keepUserMessagePending = false) {
   const sendMessageMock = vi.mocked(chrome.runtime.sendMessage as any)
   sendMessageMock.mockReset()
   sendMessageMock.mockImplementation((message: any, callback?: (response: unknown) => void) => {
@@ -43,7 +43,7 @@ function installChatPanelSendMessageMock(apiKey = '') {
         memoryRetentionDays: 30,
       },
     })
-    else if (message.type === MessageType.USER_MESSAGE) callback?.({ type: MessageType.AGENT_MESSAGE, requestId: message.requestId, payload: { text: 'should not run' } })
+    else if (message.type === MessageType.USER_MESSAGE && !keepUserMessagePending) callback?.({ type: MessageType.AGENT_MESSAGE, requestId: message.requestId, payload: { text: 'should not run' } })
     return undefined as any
   })
 }
@@ -101,6 +101,77 @@ describe('ChatPanel provider preflight', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+  })
+
+  it('renders quick action buttons and fills the input with focus when clicked', async () => {
+    await act(async () => {
+      root.render(<ChatPanel />)
+    })
+
+    expect(container.querySelector('[aria-label="快捷动作：看新闻"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="快捷动作：找工作"]')).toBeTruthy()
+    const summarizeButton = container.querySelector<HTMLButtonElement>('[aria-label="快捷动作：总结当前页"]')
+    expect(summarizeButton).toBeTruthy()
+
+    const input = getMessageInput(container)
+    await act(async () => {
+      Simulate.click(summarizeButton!)
+    })
+
+    expect(input.value).toBe('请阅读并总结当前页面，提炼核心观点、关键数据和可执行事项。')
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('uses the current local date in the news quick action prompt', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'))
+
+    try {
+      await act(async () => {
+        root.render(<ChatPanel />)
+      })
+
+      const newsButton = container.querySelector<HTMLButtonElement>('[aria-label="快捷动作：看新闻"]')
+      expect(newsButton).toBeTruthy()
+
+      const input = getMessageInput(container)
+      await act(async () => {
+        Simulate.click(newsButton!)
+      })
+
+      expect(input.value).toContain('今天（2026年5月14日）')
+      expect(input.value).toContain('仅使用2026年5月14日发布或更新的来源')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('disables quick action buttons while a message is loading', async () => {
+    installChatPanelSendMessageMock('test-api-key', true)
+
+    await act(async () => {
+      root.render(<ChatPanel />)
+    })
+
+    const input = getMessageInput(container)
+    await act(async () => {
+      Simulate.change(input, { target: { value: '你好' } } as any)
+    })
+
+    const sendButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Send')
+    expect(sendButton).toBeTruthy()
+    await act(async () => {
+      Simulate.click(sendButton!)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const quickButtons = ['看新闻', '找工作', '总结当前页'].map(label => {
+      const button = container.querySelector<HTMLButtonElement>(`[aria-label="快捷动作：${label}"]`)
+      expect(button).toBeTruthy()
+      return button!
+    })
+    expect(quickButtons.every(button => button.disabled)).toBe(true)
   })
 
   it('does not send a real task and shows setup guidance when the selected provider has no API key', async () => {
