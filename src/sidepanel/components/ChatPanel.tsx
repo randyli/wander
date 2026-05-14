@@ -143,6 +143,7 @@ export default function ChatPanel() {
   const [providerConfigError, setProviderConfigError] = useState<MissingProviderConfigError | null>(null)
   const approvalResponderRef = useRef<((response: unknown) => void) | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     sendToWorker(MessageType.GET_HISTORY, { conversationId }).then(r => {
@@ -269,6 +270,7 @@ export default function ChatPanel() {
     } finally {
       setLoading(false)
       setCurrentTaskId(null)
+      inputRef.current?.focus()
     }
   }
 
@@ -353,6 +355,7 @@ export default function ChatPanel() {
       </div>
       <div style={{ padding: '8px 16px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8 }}>
         <textarea
+          ref={inputRef}
           aria-label="Message your agent"
           value={input}
           onChange={e => setInput(e.target.value)}
