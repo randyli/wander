@@ -1,20 +1,18 @@
 import { useState, useEffect } from 'react'
-import ProvidersTab from './tabs/ProvidersTab'
 import GeneralTab from './tabs/GeneralTab'
 import SkillsTab from './tabs/SkillsTab'
 import MemoryTab from './tabs/MemoryTab'
 
-type TabId = 'providers' | 'general' | 'skills' | 'memory'
+type TabId = 'general' | 'skills' | 'memory'
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'providers', label: 'Providers' },
   { id: 'general', label: 'General' },
   { id: 'skills', label: 'Skills' },
   { id: 'memory', label: 'Memory' },
 ]
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabId>('providers')
+  const [activeTab, setActiveTab] = useState<TabId>('general')
   const [isDarkMode, setIsDarkMode] = useState(false)
 
   useEffect(() => {
@@ -58,7 +56,6 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 p-8">
         <div className="mx-auto max-w-3xl">
-          {activeTab === 'providers' && <ProvidersTab isDarkMode={isDarkMode} />}
           {activeTab === 'general' && <GeneralTab isDarkMode={isDarkMode} />}
           {activeTab === 'skills' && <SkillsTab isDarkMode={isDarkMode} />}
           {activeTab === 'memory' && <MemoryTab isDarkMode={isDarkMode} />}

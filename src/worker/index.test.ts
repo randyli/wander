@@ -20,8 +20,8 @@ vi.mock('../storage', () => ({
 describe('worker USER_MESSAGE provider validation', () => {
   beforeEach(() => {
     vi.mocked(generalSettingsStore.getSettings).mockResolvedValue({
-      defaultProvider: 'claude',
-      defaultModel: 'claude-opus-4-7',
+      provider: 'claude',
+      model: 'claude-opus-4-7',
       maxToolCallsPerTask: 20,
       maxEpisodes: 100,
       enableHistoryMemory: true,
@@ -38,7 +38,7 @@ describe('worker USER_MESSAGE provider validation', () => {
     })
   })
 
-  it('returns a recognizable structured error when the default provider has no API key', async () => {
+  it('returns a recognizable structured error when the selected provider has no API key', async () => {
     const response = await handleMessage({
       type: MessageType.USER_MESSAGE,
       requestId: 'request-1',

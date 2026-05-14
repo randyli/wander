@@ -171,9 +171,9 @@ export class Orchestrator {
       ?? this.defaultAgent(config)
     const subAgents = allAgents.filter(a => a.name !== orchestratorAgent.name)
 
-    const provider = config.defaultProvider || detectProvider(config.defaultModel)
+    const provider = config.provider
     const apiKey = await getApiKey(provider)
-    const client = getLLMClient(provider, { apiKey, model: config.defaultModel })
+    const client = getLLMClient(provider, { apiKey, model: config.model })
 
     const memoryContext = await buildMemoryContext(systemMemory, sessionMemory, {
       episodicMemory,
@@ -301,7 +301,7 @@ export class Orchestrator {
     const subAgent = allAgents.find(a => a.name === agentName)
     if (!subAgent) throw new Error(`Sub-agent not found: "${agentName}". Available: ${allAgents.map(a => a.name).join(', ')}`)
 
-    const { provider, model } = subAgent.llm ? parseAgentLlm(subAgent.llm) : { provider: config.defaultProvider, model: config.defaultModel }
+    const { provider, model } = subAgent.llm ? parseAgentLlm(subAgent.llm) : { provider: config.provider, model: config.model }
     const apiKey = await this.options.getApiKey(provider)
     const client = getLLMClient(provider, { apiKey, model })
 
@@ -357,7 +357,7 @@ export class Orchestrator {
       name: 'default',
       description: 'Default assistant',
       skills: [],
-      llm: config.defaultModel,
+      llm: config.model,
       systemPrompt: 'You are a helpful browser assistant. Answer concisely.',
     }
   }

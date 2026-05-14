@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { MessageType, isStreamChunkMessage, isTaskEventMessage, isToolApprovalRequestMessage } from '@shared/messages'
 import type { TaskEventPayload, ToolApprovalRequestMessage } from '@shared/messages'
-import { validateDefaultProviderConfig } from '@shared/providerConfig'
+import { validateSelectedProviderConfig } from '@shared/providerConfig'
 import type { MissingProviderConfigError } from '@shared/providerConfig'
 import type { GeneralSettingsConfig, ProviderConfig } from '@shared/types'
 import MessageBubble from './MessageBubble'
@@ -44,10 +44,9 @@ function isMissingProviderConfigError(error: unknown): error is MissingProviderC
 
 function providerConfigReasonText(reason: MissingProviderConfigError['reason']): string {
   switch (reason) {
-    case 'PROVIDER_NOT_FOUND': return '当前默认 provider 尚未配置。'
-    case 'PROVIDER_DISABLED': return '当前默认 provider 已停用。'
-    case 'API_KEY_MISSING': return '当前默认 provider 还没有填写 API Key。'
-    case 'MODEL_NOT_AVAILABLE': return '当前默认模型不在该 provider 的模型列表中。'
+    case 'PROVIDER_NOT_FOUND': return '当前选择的 provider 尚未配置。'
+    case 'API_KEY_MISSING': return '当前选择的 provider 还没有填写 API Key。'
+    case 'MODEL_NOT_AVAILABLE': return '当前选择的模型不在该 provider 的模型列表中。'
   }
 }
 
@@ -214,7 +213,7 @@ export default function ChatPanel() {
       if (isMissingProviderConfigError(settingsResponse.error)) return settingsResponse.error
       throw new Error(String(settingsResponse.error))
     }
-    return validateDefaultProviderConfig(
+    return validateSelectedProviderConfig(
       settingsResponse.payload as GeneralSettingsConfig,
       providersResponse.payload as Record<string, ProviderConfig>,
     )

@@ -2,7 +2,6 @@ import type { GeneralSettingsConfig, ProviderConfig } from './types'
 
 export type MissingProviderConfigReason =
   | 'PROVIDER_NOT_FOUND'
-  | 'PROVIDER_DISABLED'
   | 'API_KEY_MISSING'
   | 'MODEL_NOT_AVAILABLE'
 
@@ -14,12 +13,12 @@ export interface MissingProviderConfigError {
   message: string
 }
 
-export function validateDefaultProviderConfig(
+export function validateSelectedProviderConfig(
   settings: GeneralSettingsConfig,
   providers: Record<string, ProviderConfig>,
 ): MissingProviderConfigError | null {
-  const providerId = settings.defaultProvider
-  const model = settings.defaultModel
+  const providerId = settings.provider
+  const model = settings.model
   const provider = providers[providerId]
 
   if (!provider) {
@@ -29,16 +28,6 @@ export function validateDefaultProviderConfig(
       model,
       reason: 'PROVIDER_NOT_FOUND',
       message: `Provider ${providerId} is not configured.`,
-    }
-  }
-
-  if (!provider.enabled) {
-    return {
-      code: 'MISSING_PROVIDER_CONFIG',
-      provider: providerId,
-      model,
-      reason: 'PROVIDER_DISABLED',
-      message: `Provider ${providerId} is disabled.`,
     }
   }
 

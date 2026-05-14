@@ -72,8 +72,8 @@ describe('ChatPanel provider preflight', () => {
         type: MessageType.RESPONSE,
         requestId: message.requestId,
         payload: {
-          defaultProvider: 'claude',
-          defaultModel: 'claude-opus-4-7',
+          provider: 'claude',
+          model: 'claude-opus-4-7',
           maxToolCallsPerTask: 20,
           maxEpisodes: 100,
           enableHistoryMemory: true,
@@ -91,7 +91,7 @@ describe('ChatPanel provider preflight', () => {
     container.remove()
   })
 
-  it('does not send a real task and shows setup guidance when the default provider has no API key', async () => {
+  it('does not send a real task and shows setup guidance when the selected provider has no API key', async () => {
     await act(async () => {
       root.render(<ChatPanel />)
     })

@@ -36,8 +36,8 @@ const searchAgent: AgentDef = {
 }
 
 const mockConfig: GeneralSettingsConfig = {
-  defaultProvider: 'claude',
-  defaultModel: 'claude-opus-4-7',
+  provider: 'claude',
+  model: 'claude-opus-4-7',
   maxToolCallsPerTask: 20,
   maxEpisodes: 100,
   enableHistoryMemory: true,
