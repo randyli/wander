@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { KeyboardEvent } from 'react'
 import { MessageType, isStreamChunkMessage, isTaskEventMessage, isToolApprovalRequestMessage } from '@shared/messages'
-import type { TaskEventPayload, ToolApprovalRequestMessage } from '@shared/messages'
+import type { QuickActionsPayload, TaskEventPayload, ToolApprovalRequestMessage } from '@shared/messages'
 import { validateSelectedProviderConfig } from '@shared/providerConfig'
 import type { MissingProviderConfigError } from '@shared/providerConfig'
 import type { GeneralSettingsConfig, ProviderConfig } from '@shared/types'
@@ -21,6 +21,7 @@ interface ApprovalParamRow {
 }
 
 type WorkerResponse = { payload: unknown } | { error: string | MissingProviderConfigError }
+type QuickActionView = { label: string; getPrompt: () => string }
 
 const TOOL_LABELS: Record<string, string> = {
   'dom.fill': '填写网页表单',
@@ -39,7 +40,7 @@ function getTodayNewsPrompt(date = new Date()): string {
   return `请帮我搜索并总结今天（${today}）的重要新闻，仅使用${today}发布或更新的来源，并按要点列出来源和影响。`
 }
 
-const QUICK_ACTIONS = [
+const DEFAULT_QUICK_ACTIONS: QuickActionView[] = [
   {
     label: '看新闻',
     getPrompt: getTodayNewsPrompt,
@@ -165,9 +166,31 @@ export default function ChatPanel() {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const [taskEvents, setTaskEvents] = useState<TaskEventPayload[]>([])
   const [providerConfigError, setProviderConfigError] = useState<MissingProviderConfigError | null>(null)
+  const [quickActions, setQuickActions] = useState<QuickActionView[]>(DEFAULT_QUICK_ACTIONS)
   const approvalResponderRef = useRef<((response: unknown) => void) | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+
+  useEffect(() => {
+    let cancelled = false
+    sendToWorker(MessageType.GET_QUICK_ACTIONS, {}).then(r => {
+      if (cancelled || !('payload' in r)) return
+      const payload = r.payload as QuickActionsPayload
+      const actions = Array.isArray(payload.actions) ? payload.actions : []
+      if (actions.length === 0) {
+        setQuickActions(DEFAULT_QUICK_ACTIONS)
+        return
+      }
+      setQuickActions(actions.map(action => ({
+        label: action.label,
+        getPrompt: () => action.label === '看新闻' ? getTodayNewsPrompt() : action.prompt,
+      })))
+    }).catch(() => {
+      if (!cancelled) setQuickActions(DEFAULT_QUICK_ACTIONS)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     sendToWorker(MessageType.GET_HISTORY, { conversationId }).then(r => {
@@ -386,7 +409,7 @@ export default function ChatPanel() {
       </div>
       <div style={{ padding: '8px 16px', borderTop: '1px solid #e5e7eb' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-          {QUICK_ACTIONS.map(action => (
+          {quickActions.map(action => (
             <button
               key={action.label}
               type="button"

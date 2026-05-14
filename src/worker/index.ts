@@ -1,5 +1,5 @@
 import { MessageType } from '@shared/messages'
-import type { TaskEventPayload } from '@shared/messages'
+import type { QuickAction, QuickActionsPayload, TaskEventPayload } from '@shared/messages'
 import type { LLMMessage, ProviderConfig, GeneralSettingsConfig } from '@shared/types'
 import { validateSelectedProviderConfig } from '@shared/providerConfig'
 import { llmProviderStore, generalSettingsStore } from '../storage'
@@ -55,6 +55,101 @@ function emitTaskEvent(payload: TaskEventPayload): void {
     requestId: crypto.randomUUID(),
     payload,
   }).catch?.(() => {})
+}
+
+
+const QUICK_ACTION_STOP_WORDS = new Set([
+  'www', 'com', 'net', 'org', 'app', 'dev', 'io', 'co', 'cn', 'news', 'home', 'page', 'login', 'search',
+  '的', '和', '与', '及', 'the', 'and', 'for', 'with', 'from', 'your', 'you', 'this', 'that', '最新', '首页', '登录', '搜索',
+])
+
+function addQuickActionTopic(topics: Map<string, number>, raw: string | undefined, weight = 1): void {
+  if (!raw) return
+  const normalized = raw
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/\.[a-z]{2,}$/i, ' ')
+    .replace(/[\-_]/g, ' ')
+  const tokens = normalized.match(/[\p{Script=Han}]{2,}|[a-z0-9]{3,}/gu) ?? []
+  for (const token of tokens) {
+    const clean = token.trim()
+    if (!clean || QUICK_ACTION_STOP_WORDS.has(clean)) continue
+    topics.set(clean, (topics.get(clean) ?? 0) + weight)
+  }
+}
+
+function addBookmarkTopics(topics: Map<string, number>, nodes: chrome.bookmarks.BookmarkTreeNode[]): void {
+  for (const node of nodes) {
+    if (node.title) addQuickActionTopic(topics, node.title, node.url ? 2 : 1)
+    if (node.children) addBookmarkTopics(topics, node.children)
+  }
+}
+
+function topicLabel(topic: string): string {
+  return topic.replace(/^\p{Ll}/u, char => char.toUpperCase())
+}
+
+function buildQuickActionsFromTopics(topics: Map<string, number>): QuickAction[] {
+  const rankedTopics = [...topics.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-Hans-CN'))
+    .slice(0, 5)
+    .map(([topic]) => topicLabel(topic))
+
+  if (rankedTopics.length === 0) return []
+
+  const actions: QuickAction[] = rankedTopics.map(topic => ({
+    label: `关注 ${topic}`,
+    prompt: `请围绕“${topic}”帮我整理近期重点信息、相关趋势和下一步可操作建议。`,
+  }))
+
+  if (actions.length === 1) {
+    const [topic] = rankedTopics
+    actions.push(
+      {
+        label: `总结 ${topic}`,
+        prompt: `请总结我最近可能关注的“${topic}”资料，提炼核心观点、关键链接类型和待办事项。`,
+      },
+      {
+        label: `规划 ${topic}`,
+        prompt: `请基于“${topic}”帮我制定一个短期学习或行动计划，并列出优先级。`,
+      },
+    )
+  } else if (actions.length === 2) {
+    actions.push({
+      label: '比较主题',
+      prompt: `请比较“${rankedTopics[0]}”和“${rankedTopics[1]}”的近期重点、关联机会和我应该优先关注的方向。`,
+    })
+  }
+
+  return actions.slice(0, 5)
+}
+
+async function getQuickActions(): Promise<QuickActionsPayload> {
+  const settings = await generalSettingsStore.getSettings()
+  const startTime = Date.now() - settings.memoryRetentionDays * 24 * 60 * 60 * 1000
+  const maxResults = 100
+  const [historyItems, bookmarkTree] = await Promise.all([
+    settings.enableHistoryMemory
+      ? chrome.history.search({ text: '', startTime, maxResults })
+      : Promise.resolve([] as chrome.history.HistoryItem[]),
+    settings.enableBookmarkMemory
+      ? chrome.bookmarks.getTree()
+      : Promise.resolve([] as chrome.bookmarks.BookmarkTreeNode[]),
+  ])
+
+  const topics = new Map<string, number>()
+  for (const item of historyItems) {
+    if (item.url) {
+      try {
+        const hostname = new URL(item.url).hostname
+        addQuickActionTopic(topics, hostname, item.visitCount ?? 1)
+      } catch { /* ignore invalid URLs */ }
+    }
+    addQuickActionTopic(topics, item.title, 2)
+  }
+  addBookmarkTopics(topics, bookmarkTree)
+
+  return { actions: buildQuickActionsFromTopics(topics) }
 }
 
 function waitForTab(tabId: number, timeout = 10000): Promise<void> {
@@ -391,6 +486,8 @@ export async function handleMessage(message: { type: MessageType; requestId: str
     }
     case MessageType.GET_GENERAL_SETTINGS:
       return { type: MessageType.RESPONSE, requestId, payload: await generalSettingsStore.getSettings() }
+    case MessageType.GET_QUICK_ACTIONS:
+      return { type: MessageType.RESPONSE, requestId, payload: await getQuickActions() }
     case MessageType.UPDATE_GENERAL_SETTINGS:
       await generalSettingsStore.updateSettings(payload as Partial<GeneralSettingsConfig>)
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
