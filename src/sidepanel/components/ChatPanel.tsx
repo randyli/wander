@@ -30,6 +30,21 @@ const TOOL_LABELS: Record<string, string> = {
   'page.screenshot': '截取当前页面',
 }
 
+const QUICK_ACTIONS = [
+  {
+    label: '看新闻',
+    prompt: '请帮我搜索并总结今天的重要新闻，按要点列出来源和影响。',
+  },
+  {
+    label: '找工作',
+    prompt: '请根据我的个人资料和偏好，帮我寻找适合的远程工作机会。',
+  },
+  {
+    label: '总结当前页',
+    prompt: '请阅读并总结当前页面，提炼核心观点、关键数据和可执行事项。',
+  },
+]
+
 const RISK_LABELS: Record<ToolApprovalRequestMessage['payload']['risk'], { label: string; description: string }> = {
   read: { label: '读取', description: '读取页面或本地信息，不会修改网页。' },
   navigate: { label: '跳转', description: '会改变当前页面或打开新网页。' },
@@ -221,8 +236,8 @@ export default function ChatPanel() {
     )
   }
 
-  async function handleSend() {
-    const text = input.trim()
+  async function handleSend(textOverride?: string) {
+    const text = (textOverride ?? input).trim()
     if (!text || loading) return
 
     try {
@@ -272,6 +287,13 @@ export default function ChatPanel() {
       setCurrentTaskId(null)
       inputRef.current?.focus()
     }
+  }
+
+  function handleQuickAction(prompt: string, autoSend = false) {
+    if (loading) return
+    setInput(prompt)
+    inputRef.current?.focus()
+    if (autoSend) handleSend(prompt)
   }
 
   function handleInputKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -353,35 +375,52 @@ export default function ChatPanel() {
         {loading && !messages.some(m => m.id === currentTaskId && m.content) && <MessageBubble role="assistant" content="Thinking…" />}
         <div ref={bottomRef} />
       </div>
-      <div style={{ padding: '8px 16px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8 }}>
-        <textarea
-          ref={inputRef}
-          aria-label="Message your agent"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleInputKeyDown}
-          placeholder="Message your agent…"
-          style={{
-            flex: 1,
-            padding: '8px 12px',
-            borderRadius: 8,
-            border: '1px solid #d1d5db',
-            fontSize: 14,
-            outline: 'none',
-            resize: 'none',
-            minHeight: 40,
-            maxHeight: 120,
-            lineHeight: 1.5,
-            overflowY: 'auto',
-          }}
-        />
-        <button
-          onClick={handleSend}
-          disabled={loading || !input.trim()}
-          style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', opacity: loading || !input.trim() ? 0.5 : 1 }}
-        >
-          Send
-        </button>
+      <div style={{ padding: '8px 16px', borderTop: '1px solid #e5e7eb' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+          {QUICK_ACTIONS.map(action => (
+            <button
+              key={action.label}
+              type="button"
+              aria-label={`快捷动作：${action.label}`}
+              title={`快捷动作：${action.label}`}
+              onClick={() => handleQuickAction(action.prompt)}
+              disabled={loading}
+              style={{ padding: '6px 10px', borderRadius: 999, border: '1px solid #d1d5db', background: '#fff', color: '#374151', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1, fontSize: 12 }}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <textarea
+            ref={inputRef}
+            aria-label="Message your agent"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleInputKeyDown}
+            placeholder="Message your agent…"
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid #d1d5db',
+              fontSize: 14,
+              outline: 'none',
+              resize: 'none',
+              minHeight: 40,
+              maxHeight: 120,
+              lineHeight: 1.5,
+              overflowY: 'auto',
+            }}
+          />
+          <button
+            onClick={() => handleSend()}
+            disabled={loading || !input.trim()}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', opacity: loading || !input.trim() ? 0.5 : 1 }}
+          >
+            Send
+          </button>
+        </div>
       </div>
     </div>
   )
