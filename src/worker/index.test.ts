@@ -38,7 +38,25 @@ describe('worker USER_MESSAGE provider validation', () => {
     })
   })
 
-  it('returns a recognizable structured error when the default provider has no API key', async () => {
+  it('returns API_KEY_MISSING when sending with a selected provider and model but no API key', async () => {
+    vi.mocked(generalSettingsStore.getSettings).mockResolvedValue({
+      defaultProvider: 'openai',
+      defaultModel: 'gpt-5-mini',
+      maxToolCallsPerTask: 20,
+      maxEpisodes: 100,
+      enableHistoryMemory: true,
+      enableBookmarkMemory: true,
+      memoryRetentionDays: 30,
+    })
+    vi.mocked(llmProviderStore.getAllProviders).mockResolvedValue({
+      openai: {
+        name: 'OpenAI',
+        apiKey: '',
+        modelNames: ['gpt-5', 'gpt-5-mini'],
+        enabled: true,
+      },
+    })
+
     const response = await handleMessage({
       type: MessageType.USER_MESSAGE,
       requestId: 'request-1',
@@ -50,8 +68,8 @@ describe('worker USER_MESSAGE provider validation', () => {
       requestId: 'request-1',
       error: {
         code: 'MISSING_PROVIDER_CONFIG',
-        provider: 'claude',
-        model: 'claude-opus-4-7',
+        provider: 'openai',
+        model: 'gpt-5-mini',
         reason: 'API_KEY_MISSING',
       },
     })

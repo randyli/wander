@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { ProviderConfig } from '@shared/types'
+import type { ProviderConfig, GeneralSettingsConfig } from '@shared/types'
 
 const BUILTIN_PROVIDERS = [
   { id: 'claude', name: 'Anthropic (Claude)', defaultModels: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'] },
@@ -19,6 +19,7 @@ export default function ProvidersTab({ isDarkMode }: ProvidersTabProps) {
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({})
   const [modelInputs, setModelInputs] = useState<Record<string, string>>({})
+  const [settings, setSettings] = useState<GeneralSettingsConfig | null>(null)
 
   const loadProviders = useCallback(async () => {
     const res = await chrome.runtime.sendMessage({
@@ -28,7 +29,18 @@ export default function ProvidersTab({ isDarkMode }: ProvidersTabProps) {
     if (res?.payload) setProviders(res.payload as Record<string, ProviderConfig>)
   }, [])
 
-  useEffect(() => { loadProviders() }, [loadProviders])
+  const loadSettings = useCallback(async () => {
+    const res = await chrome.runtime.sendMessage({
+      type: 'GET_GENERAL_SETTINGS',
+      requestId: crypto.randomUUID(),
+    })
+    if (res?.payload) setSettings(res.payload as GeneralSettingsConfig)
+  }, [])
+
+  useEffect(() => {
+    loadProviders()
+    loadSettings()
+  }, [loadProviders, loadSettings])
 
   function send(type: string, payload: unknown) {
     return chrome.runtime.sendMessage({ type, requestId: crypto.randomUUID(), payload })
@@ -37,6 +49,27 @@ export default function ProvidersTab({ isDarkMode }: ProvidersTabProps) {
   async function handleSave(providerId: string, config: ProviderConfig) {
     setProviders(prev => ({ ...prev, [providerId]: config }))
     await send('SET_PROVIDER', { providerId, config })
+  }
+
+  async function updateGeneralSettings(patch: Partial<GeneralSettingsConfig>) {
+    setSettings(prev => prev ? { ...prev, ...patch } : prev)
+    await send('UPDATE_GENERAL_SETTINGS', patch)
+  }
+
+  async function handleQuickProviderChange(providerId: string) {
+    await updateGeneralSettings({ defaultProvider: providerId })
+  }
+
+  async function handleQuickModelChange(model: string) {
+    await updateGeneralSettings({ defaultModel: model })
+  }
+
+  async function handleQuickApiKeyChange(apiKey: string) {
+    if (!settings) return
+    const providerId = settings.defaultProvider
+    const config = providers[providerId]
+    if (!config) return
+    await handleSave(providerId, { ...config, apiKey })
   }
 
   async function handleDelete(providerId: string) {
@@ -73,10 +106,69 @@ export default function ProvidersTab({ isDarkMode }: ProvidersTabProps) {
   const inputBg = isDarkMode
     ? 'bg-gray-800 border-gray-700 text-gray-100 focus:border-indigo-500'
     : 'bg-white border-gray-300 text-gray-900 focus:border-indigo-500'
+  const mutedPanelBg = isDarkMode ? 'bg-indigo-950/30 border-indigo-900' : 'bg-indigo-50 border-indigo-100'
+  const currentProviderId = settings?.defaultProvider || Object.keys(providers)[0] || ''
+  const currentProvider = currentProviderId ? providers[currentProviderId] : undefined
+  const quickSetupModels = currentProvider?.modelNames || []
+  const quickSetupModelValue = settings?.defaultModel && quickSetupModels.includes(settings.defaultModel) ? settings.defaultModel : ''
 
   return (
     <div>
       <h2 className="mb-6 text-xl font-semibold">LLM Providers</h2>
+
+      <section className={`mb-6 rounded-xl border ${mutedPanelBg} p-4 shadow-sm`}>
+        <div className="mb-4">
+          <h3 className="text-base font-semibold">一步式模型配置</h3>
+          <p className="mt-1 text-sm opacity-70">先选择 provider 和模型；API Key 只需在发送任务前填写。</p>
+        </div>
+
+        {settings ? (
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="mb-2 block text-sm font-medium">Provider</label>
+              <select
+                value={currentProviderId}
+                onChange={e => handleQuickProviderChange(e.target.value)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 ${inputBg}`}
+              >
+                {Object.entries(providers).map(([id, config]) => (
+                  <option key={id} value={id}>{config.name || id}{config.enabled ? '' : ' (disabled)'}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">Model</label>
+              <select
+                value={quickSetupModelValue}
+                onChange={e => handleQuickModelChange(e.target.value)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 ${inputBg}`}
+              >
+                {!quickSetupModelValue && <option value="">Select a model</option>}
+                {quickSetupModels.map(model => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+              {quickSetupModels.length === 0 && (
+                <p className="mt-1 text-xs opacity-60">该 provider 还没有模型，请先在下方添加模型。</p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">API Key <span className="font-normal opacity-70">（发送任务前必填）</span></label>
+              <input
+                type="password"
+                value={currentProvider?.apiKey || ''}
+                onChange={e => handleQuickApiKeyChange(e.target.value)}
+                placeholder="发送任务前必填"
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-indigo-500 ${inputBg}`}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="animate-pulse text-sm opacity-60">Loading provider settings…</div>
+        )}
+      </section>
 
       <div className="space-y-4">
         {Object.entries(providers).map(([id, config]) => (

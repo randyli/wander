@@ -61,8 +61,8 @@ function ProviderConfigGuideCard({ error, onOpenSettings }: { error: MissingProv
       <ol style={{ margin: '0 0 12px 18px', padding: 0, fontSize: 13, lineHeight: 1.7 }}>
         <li>打开设置页。</li>
         <li>在 Providers 中选择并启用 provider。</li>
-        <li>填写 API Key。</li>
-        <li>在通用设置中选择该 provider 支持的模型。</li>
+        <li>选择该 provider 支持的模型。</li>
+        <li>发送任务前填写 API Key。</li>
       </ol>
       <button onClick={onOpenSettings} style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', fontSize: 13 }}>
         打开设置页
