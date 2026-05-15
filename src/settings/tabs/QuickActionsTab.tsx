@@ -47,12 +47,12 @@ export default function QuickActionsTab({ isDarkMode }: QuickActionsTabProps) {
   const [saved, setSaved] = useState(false)
   const [lastSavedQuickSettings, setLastSavedQuickSettings] = useState('')
 
-  const loadRecommendations = useCallback(async () => {
+  const loadRecommendations = useCallback(async (refresh = false) => {
     setRecommendationsLoading(true)
     try {
-      const recommendationRes = await send('GET_QUICK_ACTION_RECOMMENDATIONS')
+      const recommendationRes = await send('GET_QUICK_ACTION_RECOMMENDATIONS', { refresh })
       const payload = recommendationRes.payload as QuickActionsPayload
-      setRecommendations(Array.isArray(payload.actions) ? payload.actions : [])
+      setRecommendations(Array.isArray(payload.actions) ? payload.actions.filter(action => action.source === 'recommended') : [])
     } catch {
       setRecommendations([])
     } finally {
@@ -207,17 +207,17 @@ export default function QuickActionsTab({ isDarkMode }: QuickActionsTabProps) {
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold">Recommended buttons</h3>
-            <p className="mt-1 text-xs opacity-60">系统会根据用户记忆、知识、书签和最近历史抽取主题并生成按钮。</p>
+            <p className="mt-1 text-xs opacity-60">默认只显示已缓存的推荐；点击 Refresh 后才会根据用户记忆、知识、书签和最近历史重新生成。</p>
           </div>
-          <button onClick={loadRecommendations} disabled={recommendationsLoading} className={recommendationsLoading ? `${actionButton} cursor-wait opacity-60` : actionButton}>
+          <button onClick={() => loadRecommendations(true)} disabled={recommendationsLoading} className={recommendationsLoading ? `${actionButton} cursor-wait opacity-60` : actionButton}>
             {recommendationsLoading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
 
         {recommendationsLoading && recommendations.length === 0 ? (
-          <p className="text-sm opacity-60">正在异步生成推荐按钮，你可以先继续编辑页面上的其他设置。</p>
+          <p className="text-sm opacity-60">正在读取推荐按钮缓存，你可以先继续编辑页面上的其他设置。</p>
         ) : recommendations.length === 0 ? (
-          <p className="text-sm opacity-60">暂时没有推荐。启用历史/书签记忆、保存更多记忆，或稍后刷新。</p>
+          <p className="text-sm opacity-60">暂时没有缓存的推荐。启用历史/书签记忆、保存更多记忆，或点击 Refresh 主动刷新。</p>
         ) : (
           <div className="space-y-3">
             {recommendations.map(action => {

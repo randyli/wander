@@ -342,7 +342,6 @@ export default function ChatPanel() {
       handleSend()
     }
   }
-
   async function handleClear() {
     await sendToWorker(MessageType.CLEAR_HISTORY, { conversationId })
     setMessages([])
