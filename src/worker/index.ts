@@ -71,7 +71,6 @@ interface RecommendedQuickActionContextItem {
 
 const MAX_RECOMMENDED_QUICK_ACTIONS = 5
 const MAX_QUICK_ACTION_CONTEXT_ITEMS = 80
-const QUICK_ACTION_RECOMMENDATION_CACHE_TTL_MS = 15 * 60 * 1000
 const QUICK_ACTION_CONTEXT_LIMITS: Record<RecommendedQuickActionContextItem['type'], number> = {
   history: 30,
   bookmark: 25,
@@ -344,15 +343,13 @@ function getQuickActionRecommendationCacheKey(settings: GeneralSettingsConfig): 
   })
 }
 
-function hasFreshQuickActionRecommendationCache(settings: GeneralSettingsConfig): boolean {
+function hasQuickActionRecommendationCache(settings: GeneralSettingsConfig): boolean {
   if (!quickActionRecommendationCache) return false
-  const cacheKey = getQuickActionRecommendationCacheKey(settings)
-  const isFresh = Date.now() - quickActionRecommendationCache.generatedAt < QUICK_ACTION_RECOMMENDATION_CACHE_TTL_MS
-  return quickActionRecommendationCache.key === cacheKey && isFresh
+  return quickActionRecommendationCache.key === getQuickActionRecommendationCacheKey(settings)
 }
 
 function getCachedQuickActionRecommendations(settings: GeneralSettingsConfig): QuickAction[] {
-  if (settings.showRecommendedQuickActions === false || !hasFreshQuickActionRecommendationCache(settings)) return []
+  if (settings.showRecommendedQuickActions === false || !hasQuickActionRecommendationCache(settings)) return []
   return quickActionRecommendationCache?.actions ?? []
 }
 
@@ -374,17 +371,22 @@ function buildQuickActionsPayload(settings: GeneralSettingsConfig, recommendatio
 }
 
 function emitQuickActionsUpdated(payload: QuickActionsPayload): void {
-  chrome.runtime.sendMessage({
-    type: MessageType.QUICK_ACTIONS_UPDATED,
-    requestId: crypto.randomUUID(),
-    payload,
-  }).catch?.(() => {})
+  try {
+    const maybePromise = chrome.runtime.sendMessage({
+      type: MessageType.QUICK_ACTIONS_UPDATED,
+      requestId: crypto.randomUUID(),
+      payload,
+    }) as Promise<unknown> | undefined
+    maybePromise?.catch?.(() => {})
+  } catch {
+    // Ignore update broadcasts when no extension view is listening.
+  }
 }
 
-function refreshQuickActionRecommendations(settings: GeneralSettingsConfig): void {
-  if (settings.showRecommendedQuickActions === false || hasFreshQuickActionRecommendationCache(settings)) return
+async function refreshQuickActionRecommendations(settings: GeneralSettingsConfig): Promise<QuickAction[]> {
+  if (settings.showRecommendedQuickActions === false) return []
   const cacheKey = getQuickActionRecommendationCacheKey(settings)
-  if (quickActionRecommendationPromise && quickActionRecommendationPromiseKey === cacheKey) return
+  if (quickActionRecommendationPromise && quickActionRecommendationPromiseKey === cacheKey) return quickActionRecommendationPromise
 
   quickActionRecommendationPromiseKey = cacheKey
   quickActionRecommendationPromise = getRecommendedQuickActions(settings)
@@ -394,7 +396,7 @@ function refreshQuickActionRecommendations(settings: GeneralSettingsConfig): voi
       return actions
     })
     .catch(err => {
-      console.warn('[QuickActions] Failed to refresh recommendations asynchronously', err)
+      console.warn('[QuickActions] Failed to refresh recommendations', err)
       return []
     })
     .finally(() => {
@@ -403,12 +405,21 @@ function refreshQuickActionRecommendations(settings: GeneralSettingsConfig): voi
         quickActionRecommendationPromiseKey = null
       }
     })
+
+  return quickActionRecommendationPromise
 }
 
 async function getQuickActions(): Promise<QuickActionsPayload> {
   const settings = await generalSettingsStore.getSettings()
   const recommendations = getCachedQuickActionRecommendations(settings)
-  refreshQuickActionRecommendations(settings)
+  return buildQuickActionsPayload(settings, recommendations)
+}
+
+async function getQuickActionRecommendations(refresh = false): Promise<QuickActionsPayload> {
+  const settings = await generalSettingsStore.getSettings()
+  const recommendations = refresh
+    ? await refreshQuickActionRecommendations(settings)
+    : getCachedQuickActionRecommendations(settings)
   return buildQuickActionsPayload(settings, recommendations)
 }
 
@@ -748,8 +759,10 @@ export async function handleMessage(message: { type: MessageType; requestId: str
       return { type: MessageType.RESPONSE, requestId, payload: await generalSettingsStore.getSettings() }
     case MessageType.GET_QUICK_ACTIONS:
       return { type: MessageType.RESPONSE, requestId, payload: await getQuickActions() }
-    case MessageType.GET_QUICK_ACTION_RECOMMENDATIONS:
-      return { type: MessageType.RESPONSE, requestId, payload: { actions: await getRecommendedQuickActions() } }
+    case MessageType.GET_QUICK_ACTION_RECOMMENDATIONS: {
+      const refresh = (payload as { refresh?: boolean } | undefined)?.refresh === true
+      return { type: MessageType.RESPONSE, requestId, payload: await getQuickActionRecommendations(refresh) }
+    }
     case MessageType.UPDATE_GENERAL_SETTINGS:
       await generalSettingsStore.updateSettings(payload as Partial<GeneralSettingsConfig>)
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }

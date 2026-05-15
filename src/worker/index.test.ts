@@ -97,7 +97,25 @@ describe('worker quick action recommendations', () => {
     ])
   })
 
-  it('uses the configured LLM to generate recommended buttons from context', async () => {
+  it('returns cached quick actions without generating recommendations automatically', async () => {
+    const response = await handleMessage({
+      type: MessageType.GET_QUICK_ACTIONS,
+      requestId: 'quick-actions-cached',
+    })
+
+    expect(llmChatMock).not.toHaveBeenCalled()
+    expect(response).toMatchObject({
+      type: MessageType.RESPONSE,
+      requestId: 'quick-actions-cached',
+      payload: {
+        actions: [
+          { label: 'Existing', prompt: 'Already configured', source: 'user' },
+        ],
+      },
+    })
+  })
+
+  it('uses the configured LLM to generate recommended buttons when refresh is requested', async () => {
     llmChatMock.mockResolvedValue({
       content: JSON.stringify({
         actions: [
@@ -111,6 +129,7 @@ describe('worker quick action recommendations', () => {
     const response = await handleMessage({
       type: MessageType.GET_QUICK_ACTION_RECOMMENDATIONS,
       requestId: 'quick-actions-1',
+      payload: { refresh: true },
     })
 
     expect(getLLMClientMock).toHaveBeenCalledWith('openai', { apiKey: 'test-key', model: 'gpt-test' })
@@ -123,6 +142,7 @@ describe('worker quick action recommendations', () => {
       requestId: 'quick-actions-1',
       payload: {
         actions: [
+          { label: 'Existing', prompt: 'Already configured', source: 'user' },
           { label: 'Plan agents', prompt: 'Help me turn the agent roadmap into prioritized next steps.', source: 'recommended' },
         ],
       },

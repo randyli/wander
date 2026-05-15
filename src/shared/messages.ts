@@ -138,7 +138,7 @@ export interface GetQuickActionsMessage extends BaseMessage {
 
 export interface GetQuickActionRecommendationsMessage extends BaseMessage {
   type: MessageType.GET_QUICK_ACTION_RECOMMENDATIONS
-  payload?: Record<string, never>
+  payload?: { refresh?: boolean }
 }
 
 export interface QuickActionsPayload {

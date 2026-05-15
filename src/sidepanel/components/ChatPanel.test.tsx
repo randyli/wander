@@ -133,6 +133,7 @@ describe('ChatPanel provider preflight', () => {
     expect(input.value).toBe('请整理 React 近期重点信息。')
   })
 
+
   it('falls back to default quick actions when the worker returns an empty list', async () => {
     installChatPanelSendMessageMock('', false, [])
 
