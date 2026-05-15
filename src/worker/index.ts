@@ -58,81 +58,147 @@ function emitTaskEvent(payload: TaskEventPayload): void {
 }
 
 
-const QUICK_ACTION_STOP_WORDS = new Set([
-  'www', 'com', 'net', 'org', 'app', 'dev', 'io', 'co', 'cn', 'news', 'home', 'page', 'login', 'search',
-  '的', '和', '与', '及', 'the', 'and', 'for', 'with', 'from', 'your', 'you', 'this', 'that', '最新', '首页', '登录', '搜索',
-  'http', 'https', 'html', 'index', 'default', 'profile', 'memory', 'system',
-])
-
-function addQuickActionTopic(topics: Map<string, number>, raw: string | undefined, weight = 1): void {
-  if (!raw) return
-  const normalized = raw
-    .toLowerCase()
-    .replace(/^www\./, '')
-    .replace(/\.[a-z]{2,}$/i, ' ')
-    .replace(/[\-_]/g, ' ')
-  const tokens = normalized.match(/[\p{Script=Han}]{2,}|[a-z0-9]{3,}/gu) ?? []
-  for (const token of tokens) {
-    const clean = token.trim()
-    if (!clean || QUICK_ACTION_STOP_WORDS.has(clean)) continue
-    topics.set(clean, (topics.get(clean) ?? 0) + weight)
-  }
+interface RecommendedQuickActionContextItem {
+  type: 'history' | 'bookmark' | 'episode' | 'knowledge' | 'profile'
+  title?: string
+  url?: string
+  domain?: string
+  summary?: string
+  value?: string
+  tags?: string[]
+  visits?: number
 }
 
-function addBookmarkTopics(topics: Map<string, number>, nodes: chrome.bookmarks.BookmarkTreeNode[]): void {
+const MAX_RECOMMENDED_QUICK_ACTIONS = 5
+const MAX_QUICK_ACTION_CONTEXT_ITEMS = 80
+
+function truncateQuickActionText(value: string | undefined, maxLength: number): string | undefined {
+  const normalized = value?.replace(/\s+/g, ' ').trim()
+  if (!normalized) return undefined
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized
+}
+
+function pushQuickActionContextItem(
+  items: RecommendedQuickActionContextItem[],
+  item: RecommendedQuickActionContextItem,
+  maxItems = MAX_QUICK_ACTION_CONTEXT_ITEMS,
+): void {
+  if (items.length >= maxItems) return
+  items.push(item)
+}
+
+function addBookmarkQuickActionContext(
+  items: RecommendedQuickActionContextItem[],
+  nodes: chrome.bookmarks.BookmarkTreeNode[],
+): void {
   for (const node of nodes) {
-    if (node.title) addQuickActionTopic(topics, node.title, node.url ? 2 : 1)
-    if (node.children) addBookmarkTopics(topics, node.children)
+    if (items.length >= MAX_QUICK_ACTION_CONTEXT_ITEMS) return
+    if (node.url || node.title) {
+      pushQuickActionContextItem(items, {
+        type: 'bookmark',
+        title: truncateQuickActionText(node.title, 120),
+        url: truncateQuickActionText(node.url, 160),
+      })
+    }
+    if (node.children) addBookmarkQuickActionContext(items, node.children)
   }
 }
 
-function topicLabel(topic: string): string {
-  return topic.replace(/^\p{Ll}/u, char => char.toUpperCase())
+function extractQuickActionJson(content: string): unknown {
+  const trimmed = content.trim()
+  if (!trimmed) return []
+
+  const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+  const candidate = fencedJson?.[1]?.trim() ?? trimmed
+
+  try {
+    return JSON.parse(candidate)
+  } catch {
+    const arrayStart = candidate.indexOf('[')
+    const arrayEnd = candidate.lastIndexOf(']')
+    if (arrayStart >= 0 && arrayEnd > arrayStart) {
+      return JSON.parse(candidate.slice(arrayStart, arrayEnd + 1))
+    }
+
+    const objectStart = candidate.indexOf('{')
+    const objectEnd = candidate.lastIndexOf('}')
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      return JSON.parse(candidate.slice(objectStart, objectEnd + 1))
+    }
+
+    throw new Error('LLM response did not contain JSON')
+  }
 }
 
-function buildQuickActionsFromTopics(topics: Map<string, number>): QuickAction[] {
-  const rankedTopics = [...topics.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-Hans-CN'))
-    .slice(0, 5)
-    .map(([topic]) => topicLabel(topic))
+function normalizeLLMQuickActions(content: string): QuickAction[] {
+  const parsed = extractQuickActionJson(content)
+  const rawActions = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === 'object' && parsed !== null && Array.isArray((parsed as { actions?: unknown }).actions)
+      ? (parsed as { actions: unknown[] }).actions
+      : []
 
-  if (rankedTopics.length === 0) return []
+  const seen = new Set<string>()
+  const actions: QuickAction[] = []
+  for (const raw of rawActions) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const { label, prompt } = raw as { label?: unknown; prompt?: unknown }
+    if (typeof label !== 'string' || typeof prompt !== 'string') continue
 
-  const actions: QuickAction[] = rankedTopics.map(topic => ({
-    label: `关注 ${topic}`,
-    prompt: `请围绕“${topic}”帮我整理近期重点信息、相关趋势和下一步可操作建议。`,
-    source: 'recommended',
-  }))
+    const normalizedLabel = truncateQuickActionText(label, 28)
+    const normalizedPrompt = truncateQuickActionText(prompt, 400)
+    const dedupeKey = normalizedLabel?.toLowerCase()
+    if (!normalizedLabel || !normalizedPrompt || !dedupeKey || seen.has(dedupeKey)) continue
 
-  if (actions.length === 1) {
-    const [topic] = rankedTopics
-    actions.push(
-      {
-        label: `总结 ${topic}`,
-        prompt: `请总结我最近可能关注的“${topic}”资料，提炼核心观点、关键链接类型和待办事项。`,
-        source: 'recommended',
-      },
-      {
-        label: `规划 ${topic}`,
-        prompt: `请基于“${topic}”帮我制定一个短期学习或行动计划，并列出优先级。`,
-        source: 'recommended',
-      },
-    )
-  } else if (actions.length === 2) {
-    actions.push({
-      label: '比较主题',
-      prompt: `请比较“${rankedTopics[0]}”和“${rankedTopics[1]}”的近期重点、关联机会和我应该优先关注的方向。`,
-      source: 'recommended',
-    })
+    seen.add(dedupeKey)
+    actions.push({ label: normalizedLabel, prompt: normalizedPrompt, source: 'recommended' })
+    if (actions.length >= MAX_RECOMMENDED_QUICK_ACTIONS) break
   }
 
-  return actions.slice(0, 5)
+  return actions
 }
+
+function buildQuickActionRecommendationPrompt(
+  contextItems: RecommendedQuickActionContextItem[],
+  existingActions: QuickActionConfig[] | undefined,
+): LLMMessage[] {
+  const enabledExistingLabels = (existingActions ?? [])
+    .filter(action => action.enabled !== false && action.label.trim())
+    .map(action => action.label.trim())
+    .slice(0, 10)
+
+  return [
+    {
+      role: 'system',
+      content: [
+        'You generate concise recommended quick-action buttons for a browser assistant.',
+        'Base every recommendation on the supplied user context signals.',
+        'Return only valid JSON with this shape: {"actions":[{"label":"...","prompt":"..."}]}',
+        `Generate up to ${MAX_RECOMMENDED_QUICK_ACTIONS} actions. Labels must be short button text. Prompts must be directly usable instructions for the assistant.`,
+        'Use the same language as the dominant context language when clear; otherwise use the user interface language implied by the context.',
+        'If contextSignals is empty, return {\"actions\":[]}.',
+        'Do not include markdown, explanations, comments, or trailing commas.',
+      ].join('\n'),
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({
+        avoidExistingButtonLabels: enabledExistingLabels,
+        contextSignals: contextItems,
+      }, null, 2),
+    },
+  ]
+}
+
 
 async function getRecommendedQuickActions(settings?: GeneralSettingsConfig): Promise<QuickAction[]> {
   const currentSettings = settings ?? await generalSettingsStore.getSettings()
+  const providerConfig = await llmProviderStore.getProvider(currentSettings.provider)
+  const apiKey = providerConfig?.apiKey?.trim()
+  if (!apiKey) return []
+
   const startTime = Date.now() - currentSettings.memoryRetentionDays * 24 * 60 * 60 * 1000
-  const maxResults = 100
+  const maxResults = 50
   const [historyItems, bookmarkTree, episodes, knowledge] = await Promise.all([
     currentSettings.enableHistoryMemory
       ? chrome.history.search({ text: '', startTime, maxResults })
@@ -144,36 +210,65 @@ async function getRecommendedQuickActions(settings?: GeneralSettingsConfig): Pro
     knowledgeStore?.list?.().catch(() => []),
   ])
 
-  const topics = new Map<string, number>()
+  const contextItems: RecommendedQuickActionContextItem[] = []
+
   for (const item of historyItems) {
+    let domain: string | undefined
     if (item.url) {
       try {
-        const hostname = new URL(item.url).hostname
-        addQuickActionTopic(topics, hostname, item.visitCount ?? 1)
+        domain = new URL(item.url).hostname
       } catch { /* ignore invalid URLs */ }
     }
-    addQuickActionTopic(topics, item.title, 2)
+
+    pushQuickActionContextItem(contextItems, {
+      type: 'history',
+      title: truncateQuickActionText(item.title, 120),
+      url: truncateQuickActionText(item.url, 160),
+      domain,
+      visits: item.visitCount,
+    })
   }
-  addBookmarkTopics(topics, bookmarkTree)
+
+  addBookmarkQuickActionContext(contextItems, bookmarkTree)
 
   for (const episode of episodes ?? []) {
-    addQuickActionTopic(topics, episode.summary, 2)
-    addQuickActionTopic(topics, episode.domain, 2)
-    for (const tag of episode.tags ?? []) addQuickActionTopic(topics, tag, 3)
+    pushQuickActionContextItem(contextItems, {
+      type: 'episode',
+      summary: truncateQuickActionText(episode.summary, 240),
+      domain: truncateQuickActionText(episode.domain, 120),
+      tags: episode.tags?.slice(0, 8),
+    })
   }
 
   for (const entry of knowledge ?? []) {
-    addQuickActionTopic(topics, entry.key, 3)
-    addQuickActionTopic(topics, entry.value, 1)
-    addQuickActionTopic(topics, entry.domain, 2)
-    for (const tag of entry.tags ?? []) addQuickActionTopic(topics, tag, 3)
+    pushQuickActionContextItem(contextItems, {
+      type: 'knowledge',
+      title: truncateQuickActionText(entry.key, 120),
+      value: truncateQuickActionText(entry.value, 240),
+      domain: truncateQuickActionText(entry.domain, 120),
+      tags: entry.tags?.slice(0, 8),
+    })
   }
 
-  const profile = systemMemory?.get?.()?.profile
-  addQuickActionTopic(topics, profile, 2)
+  const profile = truncateQuickActionText(systemMemory?.get?.()?.profile, 500)
+  if (profile) {
+    pushQuickActionContextItem(contextItems, {
+      type: 'profile',
+      summary: profile,
+    })
+  }
 
-  return buildQuickActionsFromTopics(topics)
+  try {
+    const { getLLMClient } = await import('./llm/client')
+    const client = getLLMClient(currentSettings.provider, { apiKey, model: currentSettings.model })
+    const response = await client.chat(buildQuickActionRecommendationPrompt(contextItems, currentSettings.quickActions))
+    return normalizeLLMQuickActions(response.content)
+  } catch (err) {
+    console.warn('[QuickActions] Failed to generate recommendations with LLM', err)
+    return []
+  }
 }
+
 
 function normalizeConfiguredQuickActions(actions: QuickActionConfig[] | undefined): QuickAction[] {
   if (!Array.isArray(actions)) return []
