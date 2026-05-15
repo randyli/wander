@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react'
 import GeneralTab from './tabs/GeneralTab'
 import SkillsTab from './tabs/SkillsTab'
 import MemoryTab from './tabs/MemoryTab'
+import QuickActionsTab from './tabs/QuickActionsTab'
 
-type TabId = 'general' | 'skills' | 'memory'
+type TabId = 'general' | 'quickActions' | 'skills' | 'memory'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'general', label: 'General' },
+  { id: 'quickActions', label: 'Quick Actions' },
   { id: 'skills', label: 'Skills' },
   { id: 'memory', label: 'Memory' },
 ]
@@ -57,6 +59,7 @@ export default function App() {
       <main className="flex-1 p-8">
         <div className="mx-auto max-w-3xl">
           {activeTab === 'general' && <GeneralTab isDarkMode={isDarkMode} />}
+          {activeTab === 'quickActions' && <QuickActionsTab isDarkMode={isDarkMode} />}
           {activeTab === 'skills' && <SkillsTab isDarkMode={isDarkMode} />}
           {activeTab === 'memory' && <MemoryTab isDarkMode={isDarkMode} />}
         </div>

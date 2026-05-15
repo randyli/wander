@@ -1,5 +1,6 @@
 import { createStorage } from './base'
 import type { BaseStorage } from './base'
+import type { QuickActionConfig } from '@shared/types'
 
 export interface GeneralSettingsConfig {
   provider: string
@@ -9,6 +10,8 @@ export interface GeneralSettingsConfig {
   enableHistoryMemory: boolean
   enableBookmarkMemory: boolean
   memoryRetentionDays: number
+  quickActions?: QuickActionConfig[]
+  showRecommendedQuickActions?: boolean
 }
 
 type LegacyGeneralSettingsConfig = Partial<GeneralSettingsConfig> & {
@@ -30,6 +33,8 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettingsConfig = {
   enableHistoryMemory: true,
   enableBookmarkMemory: true,
   memoryRetentionDays: 30,
+  quickActions: [],
+  showRecommendedQuickActions: true,
 }
 
 const storage = createStorage<GeneralSettingsConfig>(
@@ -44,6 +49,8 @@ function normalizeSettings(settings: LegacyGeneralSettingsConfig): GeneralSettin
     ...settings,
     provider: settings.provider ?? settings.defaultProvider ?? DEFAULT_GENERAL_SETTINGS.provider,
     model: settings.model ?? settings.defaultModel ?? DEFAULT_GENERAL_SETTINGS.model,
+    quickActions: Array.isArray(settings.quickActions) ? settings.quickActions : DEFAULT_GENERAL_SETTINGS.quickActions,
+    showRecommendedQuickActions: settings.showRecommendedQuickActions ?? DEFAULT_GENERAL_SETTINGS.showRecommendedQuickActions,
   }
 }
 

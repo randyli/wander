@@ -82,6 +82,14 @@ export interface ProviderConfig {
   enabled: boolean
 }
 
+export interface QuickActionConfig {
+  id: string
+  label: string
+  prompt: string
+  enabled: boolean
+  source?: 'user' | 'recommended' | 'default'
+}
+
 export interface GeneralSettingsConfig {
   provider: string
   model: string
@@ -90,6 +98,8 @@ export interface GeneralSettingsConfig {
   enableHistoryMemory: boolean
   enableBookmarkMemory: boolean
   memoryRetentionDays: number
+  quickActions?: QuickActionConfig[]
+  showRecommendedQuickActions?: boolean
 }
 
 export interface TaskState {

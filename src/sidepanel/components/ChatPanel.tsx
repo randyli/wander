@@ -179,7 +179,7 @@ export default function ChatPanel() {
       const payload = r.payload as QuickActionsPayload
       const actions = Array.isArray(payload.actions) ? payload.actions : []
       if (actions.length === 0) {
-        setQuickActions(DEFAULT_QUICK_ACTIONS)
+        setQuickActions(payload.isExplicitEmpty ? [] : DEFAULT_QUICK_ACTIONS)
         return
       }
       setQuickActions(actions.map(action => ({

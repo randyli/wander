@@ -1,6 +1,6 @@
 import { MessageType } from '@shared/messages'
 import type { QuickAction, QuickActionsPayload, TaskEventPayload } from '@shared/messages'
-import type { LLMMessage, ProviderConfig, GeneralSettingsConfig } from '@shared/types'
+import type { LLMMessage, ProviderConfig, GeneralSettingsConfig, QuickActionConfig } from '@shared/types'
 import { validateSelectedProviderConfig } from '@shared/providerConfig'
 import { llmProviderStore, generalSettingsStore } from '../storage'
 import { Orchestrator } from './orchestrator'
@@ -61,6 +61,7 @@ function emitTaskEvent(payload: TaskEventPayload): void {
 const QUICK_ACTION_STOP_WORDS = new Set([
   'www', 'com', 'net', 'org', 'app', 'dev', 'io', 'co', 'cn', 'news', 'home', 'page', 'login', 'search',
   '的', '和', '与', '及', 'the', 'and', 'for', 'with', 'from', 'your', 'you', 'this', 'that', '最新', '首页', '登录', '搜索',
+  'http', 'https', 'html', 'index', 'default', 'profile', 'memory', 'system',
 ])
 
 function addQuickActionTopic(topics: Map<string, number>, raw: string | undefined, weight = 1): void {
@@ -100,6 +101,7 @@ function buildQuickActionsFromTopics(topics: Map<string, number>): QuickAction[]
   const actions: QuickAction[] = rankedTopics.map(topic => ({
     label: `关注 ${topic}`,
     prompt: `请围绕“${topic}”帮我整理近期重点信息、相关趋势和下一步可操作建议。`,
+    source: 'recommended',
   }))
 
   if (actions.length === 1) {
@@ -108,33 +110,38 @@ function buildQuickActionsFromTopics(topics: Map<string, number>): QuickAction[]
       {
         label: `总结 ${topic}`,
         prompt: `请总结我最近可能关注的“${topic}”资料，提炼核心观点、关键链接类型和待办事项。`,
+        source: 'recommended',
       },
       {
         label: `规划 ${topic}`,
         prompt: `请基于“${topic}”帮我制定一个短期学习或行动计划，并列出优先级。`,
+        source: 'recommended',
       },
     )
   } else if (actions.length === 2) {
     actions.push({
       label: '比较主题',
       prompt: `请比较“${rankedTopics[0]}”和“${rankedTopics[1]}”的近期重点、关联机会和我应该优先关注的方向。`,
+      source: 'recommended',
     })
   }
 
   return actions.slice(0, 5)
 }
 
-async function getQuickActions(): Promise<QuickActionsPayload> {
-  const settings = await generalSettingsStore.getSettings()
-  const startTime = Date.now() - settings.memoryRetentionDays * 24 * 60 * 60 * 1000
+async function getRecommendedQuickActions(settings?: GeneralSettingsConfig): Promise<QuickAction[]> {
+  const currentSettings = settings ?? await generalSettingsStore.getSettings()
+  const startTime = Date.now() - currentSettings.memoryRetentionDays * 24 * 60 * 60 * 1000
   const maxResults = 100
-  const [historyItems, bookmarkTree] = await Promise.all([
-    settings.enableHistoryMemory
+  const [historyItems, bookmarkTree, episodes, knowledge] = await Promise.all([
+    currentSettings.enableHistoryMemory
       ? chrome.history.search({ text: '', startTime, maxResults })
       : Promise.resolve([] as chrome.history.HistoryItem[]),
-    settings.enableBookmarkMemory
+    currentSettings.enableBookmarkMemory
       ? chrome.bookmarks.getTree()
       : Promise.resolve([] as chrome.bookmarks.BookmarkTreeNode[]),
+    episodicMemory?.list?.().catch(() => []),
+    knowledgeStore?.list?.().catch(() => []),
   ])
 
   const topics = new Map<string, number>()
@@ -149,7 +156,48 @@ async function getQuickActions(): Promise<QuickActionsPayload> {
   }
   addBookmarkTopics(topics, bookmarkTree)
 
-  return { actions: buildQuickActionsFromTopics(topics) }
+  for (const episode of episodes ?? []) {
+    addQuickActionTopic(topics, episode.summary, 2)
+    addQuickActionTopic(topics, episode.domain, 2)
+    for (const tag of episode.tags ?? []) addQuickActionTopic(topics, tag, 3)
+  }
+
+  for (const entry of knowledge ?? []) {
+    addQuickActionTopic(topics, entry.key, 3)
+    addQuickActionTopic(topics, entry.value, 1)
+    addQuickActionTopic(topics, entry.domain, 2)
+    for (const tag of entry.tags ?? []) addQuickActionTopic(topics, tag, 3)
+  }
+
+  const profile = systemMemory?.get?.()?.profile
+  addQuickActionTopic(topics, profile, 2)
+
+  return buildQuickActionsFromTopics(topics)
+}
+
+function normalizeConfiguredQuickActions(actions: QuickActionConfig[] | undefined): QuickAction[] {
+  if (!Array.isArray(actions)) return []
+  return actions
+    .filter(action => action.enabled !== false && action.label.trim() && action.prompt.trim())
+    .map(action => ({ label: action.label.trim(), prompt: action.prompt.trim(), source: action.source ?? 'user' }))
+}
+
+async function getQuickActions(): Promise<QuickActionsPayload> {
+  const settings = await generalSettingsStore.getSettings()
+  const configured = normalizeConfiguredQuickActions(settings.quickActions)
+  const recommendations = settings.showRecommendedQuickActions === false ? [] : await getRecommendedQuickActions(settings)
+  const seen = new Set<string>()
+  const actions = [...configured, ...recommendations].filter(action => {
+    const key = action.label.trim().toLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  return {
+    actions: actions.slice(0, 5),
+    isExplicitEmpty: configured.length === 0 && settings.showRecommendedQuickActions === false,
+  }
 }
 
 function waitForTab(tabId: number, timeout = 10000): Promise<void> {
@@ -488,6 +536,8 @@ export async function handleMessage(message: { type: MessageType; requestId: str
       return { type: MessageType.RESPONSE, requestId, payload: await generalSettingsStore.getSettings() }
     case MessageType.GET_QUICK_ACTIONS:
       return { type: MessageType.RESPONSE, requestId, payload: await getQuickActions() }
+    case MessageType.GET_QUICK_ACTION_RECOMMENDATIONS:
+      return { type: MessageType.RESPONSE, requestId, payload: { actions: await getRecommendedQuickActions() } }
     case MessageType.UPDATE_GENERAL_SETTINGS:
       await generalSettingsStore.updateSettings(payload as Partial<GeneralSettingsConfig>)
       return { type: MessageType.RESPONSE, requestId, payload: { ok: true } }
