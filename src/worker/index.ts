@@ -71,6 +71,7 @@ interface RecommendedQuickActionContextItem {
 
 const MAX_RECOMMENDED_QUICK_ACTIONS = 5
 const MAX_QUICK_ACTION_CONTEXT_ITEMS = 80
+const QUICK_ACTION_RECOMMENDATION_CACHE_TTL_MS = 15 * 60 * 1000
 const QUICK_ACTION_CONTEXT_LIMITS: Record<RecommendedQuickActionContextItem['type'], number> = {
   history: 30,
   bookmark: 25,
@@ -312,6 +313,16 @@ async function getRecommendedQuickActions(settings?: GeneralSettingsConfig): Pro
 }
 
 
+interface QuickActionRecommendationCacheEntry {
+  key: string
+  actions: QuickAction[]
+  generatedAt: number
+}
+
+let quickActionRecommendationCache: QuickActionRecommendationCacheEntry | null = null
+let quickActionRecommendationPromise: Promise<QuickAction[]> | null = null
+let quickActionRecommendationPromiseKey: string | null = null
+
 function normalizeConfiguredQuickActions(actions: QuickActionConfig[] | undefined): QuickAction[] {
   if (!Array.isArray(actions)) return []
   return actions
@@ -319,12 +330,37 @@ function normalizeConfiguredQuickActions(actions: QuickActionConfig[] | undefine
     .map(action => ({ label: action.label.trim(), prompt: action.prompt.trim(), source: action.source ?? 'user' }))
 }
 
-async function getQuickActions(): Promise<QuickActionsPayload> {
-  const settings = await generalSettingsStore.getSettings()
+function getQuickActionRecommendationCacheKey(settings: GeneralSettingsConfig): string {
+  return JSON.stringify({
+    provider: settings.provider,
+    model: settings.model,
+    enableHistoryMemory: settings.enableHistoryMemory,
+    enableBookmarkMemory: settings.enableBookmarkMemory,
+    memoryRetentionDays: settings.memoryRetentionDays,
+    quickActions: (settings.quickActions ?? []).map(action => ({
+      label: action.label,
+      enabled: action.enabled !== false,
+    })),
+  })
+}
+
+function hasFreshQuickActionRecommendationCache(settings: GeneralSettingsConfig): boolean {
+  if (!quickActionRecommendationCache) return false
+  const cacheKey = getQuickActionRecommendationCacheKey(settings)
+  const isFresh = Date.now() - quickActionRecommendationCache.generatedAt < QUICK_ACTION_RECOMMENDATION_CACHE_TTL_MS
+  return quickActionRecommendationCache.key === cacheKey && isFresh
+}
+
+function getCachedQuickActionRecommendations(settings: GeneralSettingsConfig): QuickAction[] {
+  if (settings.showRecommendedQuickActions === false || !hasFreshQuickActionRecommendationCache(settings)) return []
+  return quickActionRecommendationCache?.actions ?? []
+}
+
+function buildQuickActionsPayload(settings: GeneralSettingsConfig, recommendations: QuickAction[]): QuickActionsPayload {
   const configured = normalizeConfiguredQuickActions(settings.quickActions)
-  const recommendations = settings.showRecommendedQuickActions === false ? [] : await getRecommendedQuickActions(settings)
   const seen = new Set<string>()
-  const actions = [...configured, ...recommendations].filter(action => {
+  const visibleRecommendations = settings.showRecommendedQuickActions === false ? [] : recommendations
+  const actions = [...configured, ...visibleRecommendations].filter(action => {
     const key = action.label.trim().toLowerCase()
     if (!key || seen.has(key)) return false
     seen.add(key)
@@ -335,6 +371,45 @@ async function getQuickActions(): Promise<QuickActionsPayload> {
     actions: actions.slice(0, 5),
     isExplicitEmpty: configured.length === 0 && settings.showRecommendedQuickActions === false,
   }
+}
+
+function emitQuickActionsUpdated(payload: QuickActionsPayload): void {
+  chrome.runtime.sendMessage({
+    type: MessageType.QUICK_ACTIONS_UPDATED,
+    requestId: crypto.randomUUID(),
+    payload,
+  }).catch?.(() => {})
+}
+
+function refreshQuickActionRecommendations(settings: GeneralSettingsConfig): void {
+  if (settings.showRecommendedQuickActions === false || hasFreshQuickActionRecommendationCache(settings)) return
+  const cacheKey = getQuickActionRecommendationCacheKey(settings)
+  if (quickActionRecommendationPromise && quickActionRecommendationPromiseKey === cacheKey) return
+
+  quickActionRecommendationPromiseKey = cacheKey
+  quickActionRecommendationPromise = getRecommendedQuickActions(settings)
+    .then(actions => {
+      quickActionRecommendationCache = { key: cacheKey, actions, generatedAt: Date.now() }
+      emitQuickActionsUpdated(buildQuickActionsPayload(settings, actions))
+      return actions
+    })
+    .catch(err => {
+      console.warn('[QuickActions] Failed to refresh recommendations asynchronously', err)
+      return []
+    })
+    .finally(() => {
+      if (quickActionRecommendationPromiseKey === cacheKey) {
+        quickActionRecommendationPromise = null
+        quickActionRecommendationPromiseKey = null
+      }
+    })
+}
+
+async function getQuickActions(): Promise<QuickActionsPayload> {
+  const settings = await generalSettingsStore.getSettings()
+  const recommendations = getCachedQuickActionRecommendations(settings)
+  refreshQuickActionRecommendations(settings)
+  return buildQuickActionsPayload(settings, recommendations)
 }
 
 function waitForTab(tabId: number, timeout = 10000): Promise<void> {

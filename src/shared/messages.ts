@@ -34,6 +34,7 @@ export enum MessageType {
   GET_GENERAL_SETTINGS = 'GET_GENERAL_SETTINGS',
   GET_QUICK_ACTIONS = 'GET_QUICK_ACTIONS',
   GET_QUICK_ACTION_RECOMMENDATIONS = 'GET_QUICK_ACTION_RECOMMENDATIONS',
+  QUICK_ACTIONS_UPDATED = 'QUICK_ACTIONS_UPDATED',
   UPDATE_GENERAL_SETTINGS = 'UPDATE_GENERAL_SETTINGS',
   RESET_GENERAL_SETTINGS = 'RESET_GENERAL_SETTINGS',
   AGENT_MESSAGE = 'AGENT_MESSAGE',
@@ -145,6 +146,11 @@ export interface QuickActionsPayload {
   isExplicitEmpty?: boolean
 }
 
+export interface QuickActionsUpdatedMessage extends BaseMessage {
+  type: MessageType.QUICK_ACTIONS_UPDATED
+  payload: QuickActionsPayload
+}
+
 export interface ToolApprovalRequestMessage extends BaseMessage {
   type: MessageType.TOOL_APPROVAL_REQUEST
   payload: { tool: string; params: Record<string, unknown>; targetUrl?: string; risk: ToolRisk }
@@ -158,7 +164,8 @@ export interface ToolApprovalResponseMessage extends BaseMessage {
 export type ChromeMessage =
   | UserMessage | StreamChunkMessage | CancelTaskMessage | CreateConversationMessage | SwitchConversationMessage
   | AgentMessage | ToolCallMessage | ToolResultMessage | TaskEventMessage | ResponseMessage
-  | GetQuickActionsMessage | GetQuickActionRecommendationsMessage | ToolApprovalRequestMessage | ToolApprovalResponseMessage
+  | GetQuickActionsMessage | GetQuickActionRecommendationsMessage | QuickActionsUpdatedMessage
+  | ToolApprovalRequestMessage | ToolApprovalResponseMessage
 
 export function isToolCallMessage(msg: unknown): msg is ToolCallMessage {
   return (msg as BaseMessage)?.type === MessageType.TOOL_CALL
@@ -186,4 +193,8 @@ export function isTaskEventMessage(msg: unknown): msg is TaskEventMessage {
 
 export function isStreamChunkMessage(msg: unknown): msg is StreamChunkMessage {
   return (msg as BaseMessage)?.type === MessageType.STREAM_CHUNK
+}
+
+export function isQuickActionsUpdatedMessage(msg: unknown): msg is QuickActionsUpdatedMessage {
+  return (msg as BaseMessage)?.type === MessageType.QUICK_ACTIONS_UPDATED
 }

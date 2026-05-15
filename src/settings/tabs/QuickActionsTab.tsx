@@ -43,20 +43,30 @@ function serializeQuickSettings(settings: GeneralSettingsConfig): string {
 export default function QuickActionsTab({ isDarkMode }: QuickActionsTabProps) {
   const [settings, setSettings] = useState<GeneralSettingsConfig | null>(null)
   const [recommendations, setRecommendations] = useState<QuickAction[]>([])
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [lastSavedQuickSettings, setLastSavedQuickSettings] = useState('')
 
+  const loadRecommendations = useCallback(async () => {
+    setRecommendationsLoading(true)
+    try {
+      const recommendationRes = await send('GET_QUICK_ACTION_RECOMMENDATIONS')
+      const payload = recommendationRes.payload as QuickActionsPayload
+      setRecommendations(Array.isArray(payload.actions) ? payload.actions : [])
+    } catch {
+      setRecommendations([])
+    } finally {
+      setRecommendationsLoading(false)
+    }
+  }, [])
+
   const load = useCallback(async () => {
-    const [settingsRes, recommendationRes] = await Promise.all([
-      send('GET_GENERAL_SETTINGS'),
-      send('GET_QUICK_ACTION_RECOMMENDATIONS'),
-    ])
+    const settingsRes = await send('GET_GENERAL_SETTINGS')
     const loadedSettings = settingsRes.payload as GeneralSettingsConfig
     setSettings(loadedSettings)
     setLastSavedQuickSettings(serializeQuickSettings(loadedSettings))
-    const payload = recommendationRes.payload as QuickActionsPayload
-    setRecommendations(Array.isArray(payload.actions) ? payload.actions : [])
-  }, [])
+    void loadRecommendations()
+  }, [loadRecommendations])
 
   useEffect(() => { load() }, [load])
 
@@ -199,10 +209,14 @@ export default function QuickActionsTab({ isDarkMode }: QuickActionsTabProps) {
             <h3 className="text-sm font-semibold">Recommended buttons</h3>
             <p className="mt-1 text-xs opacity-60">系统会根据用户记忆、知识、书签和最近历史抽取主题并生成按钮。</p>
           </div>
-          <button onClick={load} className={actionButton}>Refresh</button>
+          <button onClick={loadRecommendations} disabled={recommendationsLoading} className={recommendationsLoading ? `${actionButton} cursor-wait opacity-60` : actionButton}>
+            {recommendationsLoading ? 'Refreshing…' : 'Refresh'}
+          </button>
         </div>
 
-        {recommendations.length === 0 ? (
+        {recommendationsLoading && recommendations.length === 0 ? (
+          <p className="text-sm opacity-60">正在异步生成推荐按钮，你可以先继续编辑页面上的其他设置。</p>
+        ) : recommendations.length === 0 ? (
           <p className="text-sm opacity-60">暂时没有推荐。启用历史/书签记忆、保存更多记忆，或稍后刷新。</p>
         ) : (
           <div className="space-y-3">

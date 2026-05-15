@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import type { KeyboardEvent } from 'react'
-import { MessageType, isStreamChunkMessage, isTaskEventMessage, isToolApprovalRequestMessage } from '@shared/messages'
+import { MessageType, isQuickActionsUpdatedMessage, isStreamChunkMessage, isTaskEventMessage, isToolApprovalRequestMessage } from '@shared/messages'
 import type { QuickActionsPayload, TaskEventPayload, ToolApprovalRequestMessage } from '@shared/messages'
 import { validateSelectedProviderConfig } from '@shared/providerConfig'
 import type { MissingProviderConfigError } from '@shared/providerConfig'
@@ -172,20 +172,23 @@ export default function ChatPanel() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
 
+  function applyQuickActionsPayload(payload: QuickActionsPayload) {
+    const actions = Array.isArray(payload.actions) ? payload.actions : []
+    if (actions.length === 0) {
+      setQuickActions(payload.isExplicitEmpty ? [] : DEFAULT_QUICK_ACTIONS)
+      return
+    }
+    setQuickActions(actions.map(action => ({
+      label: action.label,
+      getPrompt: () => action.label === '看新闻' ? getTodayNewsPrompt() : action.prompt,
+    })))
+  }
+
   useEffect(() => {
     let cancelled = false
     sendToWorker(MessageType.GET_QUICK_ACTIONS, {}).then(r => {
       if (cancelled || !('payload' in r)) return
-      const payload = r.payload as QuickActionsPayload
-      const actions = Array.isArray(payload.actions) ? payload.actions : []
-      if (actions.length === 0) {
-        setQuickActions(payload.isExplicitEmpty ? [] : DEFAULT_QUICK_ACTIONS)
-        return
-      }
-      setQuickActions(actions.map(action => ({
-        label: action.label,
-        getPrompt: () => action.label === '看新闻' ? getTodayNewsPrompt() : action.prompt,
-      })))
+      applyQuickActionsPayload(r.payload as QuickActionsPayload)
     }).catch(() => {
       if (!cancelled) setQuickActions(DEFAULT_QUICK_ACTIONS)
     })
@@ -223,6 +226,10 @@ export default function ChatPanel() {
         if (message.payload.status === 'cancelled') setTaskStatus('cancelled')
         else if (message.payload.status === 'error') setTaskStatus('error')
         else if (message.payload.status === 'running') setTaskStatus('running')
+        return false
+      }
+      if (isQuickActionsUpdatedMessage(message)) {
+        applyQuickActionsPayload(message.payload)
         return false
       }
       if (!isToolApprovalRequestMessage(message)) return false
