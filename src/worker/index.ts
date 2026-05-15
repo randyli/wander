@@ -24,6 +24,7 @@ import fillFormMd from '../../skills/fill-form.md?raw'
 import memoryReadMd from '../../skills/memory-read.md?raw'
 import memoryWriteMd from '../../skills/memory-write.md?raw'
 import readHistoryMd from '../../skills/read-history.md?raw'
+import polymarketMd from '../../skills/polymarket.md?raw'
 
 let skillRegistry: SkillRegistry
 let agentRegistry: AgentRegistry
@@ -596,7 +597,7 @@ async function doInit() {
 }
 
 async function seedBuiltins() {
-  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, clickMd, fillFormMd, memoryReadMd, memoryWriteMd, readHistoryMd]
+  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, clickMd, fillFormMd, memoryReadMd, memoryWriteMd, readHistoryMd, polymarketMd]
   await Promise.all(builtinSkills.map(md => skillRegistry.install(md)))
 
   await agentRegistry.install(orchestratorAgentMd)
