@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import type { ProviderConfig, GeneralSettingsConfig } from '@shared/types'
 
 interface GeneralTabProps {
@@ -9,6 +9,8 @@ export default function GeneralTab({ isDarkMode }: GeneralTabProps) {
   const [settings, setSettings] = useState<GeneralSettingsConfig | null>(null)
   const [providers, setProviders] = useState<Record<string, ProviderConfig>>({})
   const [saved, setSaved] = useState(false)
+  const [lastSavedSettings, setLastSavedSettings] = useState<GeneralSettingsConfig | null>(null)
+  const [lastSavedProviders, setLastSavedProviders] = useState<Record<string, ProviderConfig>>({})
   const [visibleKey, setVisibleKey] = useState(false)
 
   const load = useCallback(async () => {
@@ -16,8 +18,16 @@ export default function GeneralTab({ isDarkMode }: GeneralTabProps) {
       chrome.runtime.sendMessage({ type: 'GET_GENERAL_SETTINGS', requestId: crypto.randomUUID() }),
       chrome.runtime.sendMessage({ type: 'GET_PROVIDERS', requestId: crypto.randomUUID() }),
     ])
-    if (settingsRes?.payload) setSettings(settingsRes.payload as GeneralSettingsConfig)
-    if (providersRes?.payload) setProviders(providersRes.payload as Record<string, ProviderConfig>)
+    if (settingsRes?.payload) {
+      const loadedSettings = settingsRes.payload as GeneralSettingsConfig
+      setSettings(loadedSettings)
+      setLastSavedSettings(loadedSettings)
+    }
+    if (providersRes?.payload) {
+      const loadedProviders = providersRes.payload as Record<string, ProviderConfig>
+      setProviders(loadedProviders)
+      setLastSavedProviders(loadedProviders)
+    }
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -31,27 +41,32 @@ export default function GeneralTab({ isDarkMode }: GeneralTabProps) {
     setTimeout(() => setSaved(false), 1500)
   }
 
-  async function updateField<K extends keyof GeneralSettingsConfig>(key: K, value: GeneralSettingsConfig[K]) {
+  function updateField<K extends keyof GeneralSettingsConfig>(key: K, value: GeneralSettingsConfig[K]) {
     if (!settings) return
-    const updated = { ...settings, [key]: value }
-    setSettings(updated)
-    await send('UPDATE_GENERAL_SETTINGS', { [key]: value })
-    showSaved()
+    setSaved(false)
+    setSettings({ ...settings, [key]: value })
   }
 
-  async function updateProvider(providerId: string, config: ProviderConfig) {
+  function updateProvider(providerId: string, config: ProviderConfig) {
+    setSaved(false)
     setProviders(prev => ({ ...prev, [providerId]: config }))
-    await send('SET_PROVIDER', { providerId, config })
-    showSaved()
   }
 
-  async function handleProviderChange(providerId: string) {
+  function handleProviderChange(providerId: string) {
     if (!settings) return
     const provider = providers[providerId]
     const nextModel = provider?.modelNames[0] ?? ''
-    const updated = { ...settings, provider: providerId, model: nextModel }
-    setSettings(updated)
-    await send('UPDATE_GENERAL_SETTINGS', { provider: providerId, model: nextModel })
+    setSaved(false)
+    setSettings({ ...settings, provider: providerId, model: nextModel })
+  }
+
+  async function saveAll() {
+    if (!settings) return
+    const { quickActions: _quickActions, showRecommendedQuickActions: _showRecommendedQuickActions, ...generalSettings } = settings
+    await send('UPDATE_GENERAL_SETTINGS', generalSettings)
+    await Promise.all(Object.entries(providers).map(([providerId, config]) => send('SET_PROVIDER', { providerId, config })))
+    setLastSavedSettings(settings)
+    setLastSavedProviders(providers)
     showSaved()
   }
 
@@ -60,6 +75,12 @@ export default function GeneralTab({ isDarkMode }: GeneralTabProps) {
     await load()
     showSaved()
   }
+
+  const isDirty = useMemo(() => (
+    settings !== null && (
+      JSON.stringify(settings) !== JSON.stringify(lastSavedSettings) || JSON.stringify(providers) !== JSON.stringify(lastSavedProviders)
+    )
+  ), [settings, lastSavedSettings, providers, lastSavedProviders])
 
   if (!settings || Object.keys(providers).length === 0) return <div className="animate-pulse space-y-4"><div className="h-8 w-48 rounded bg-gray-200" /><div className="h-32 rounded bg-gray-200" /></div>
 
@@ -70,12 +91,19 @@ export default function GeneralTab({ isDarkMode }: GeneralTabProps) {
   const inputBg = isDarkMode
     ? 'bg-gray-800 border-gray-700 text-gray-100 focus:border-indigo-500'
     : 'bg-white border-gray-300 text-gray-900 focus:border-indigo-500'
+  const saveButton = `rounded-lg px-4 py-2 text-sm font-medium text-white ${isDirty ? 'bg-indigo-600 hover:bg-indigo-700' : 'cursor-not-allowed bg-indigo-400 opacity-60'}`
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">General Settings</h2>
-        {saved && <span className="text-sm text-green-600">Saved</span>}
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold">General Settings</h2>
+          {isDirty && <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">Unsaved changes</p>}
+        </div>
+        <div className="flex items-center gap-3">
+          {saved && <span className="text-sm text-green-600">Saved</span>}
+          <button type="button" onClick={saveAll} disabled={!isDirty} className={saveButton}>Save</button>
+        </div>
       </div>
 
       <div className={`space-y-6 rounded-xl border ${cardBg} p-6 shadow-sm`}>
