@@ -59,15 +59,25 @@ const storage = createStorage<LLMKeyRecord>(
   { liveUpdate: true },
 )
 
+let providerWriteQueue: Promise<void> = Promise.resolve()
+
+function enqueueProviderWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const run = providerWriteQueue.then(operation, operation)
+  providerWriteQueue = run.then(() => undefined, () => undefined)
+  return run
+}
+
 export const llmProviderStore: LLMProviderStorage = {
   ...storage,
   async setProvider(providerId: string, config: ProviderConfig) {
-    const current = await storage.get()
-    await storage.set({
-      providers: {
-        ...current.providers,
-        [providerId]: config,
-      },
+    await enqueueProviderWrite(async () => {
+      const current = await storage.get()
+      await storage.set({
+        providers: {
+          ...current.providers,
+          [providerId]: config,
+        },
+      })
     })
   },
   async getProvider(providerId: string) {
@@ -75,10 +85,12 @@ export const llmProviderStore: LLMProviderStorage = {
     return data.providers[providerId]
   },
   async removeProvider(providerId: string) {
-    const current = await storage.get()
-    const newProviders = { ...current.providers }
-    delete newProviders[providerId]
-    await storage.set({ providers: newProviders })
+    await enqueueProviderWrite(async () => {
+      const current = await storage.get()
+      const newProviders = { ...current.providers }
+      delete newProviders[providerId]
+      await storage.set({ providers: newProviders })
+    })
   },
   async getAllProviders() {
     const data = await storage.get()
