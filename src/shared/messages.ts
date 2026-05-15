@@ -142,6 +142,7 @@ export interface GetQuickActionRecommendationsMessage extends BaseMessage {
 
 export interface QuickActionsPayload {
   actions: QuickAction[]
+  isExplicitEmpty?: boolean
 }
 
 export interface ToolApprovalRequestMessage extends BaseMessage {

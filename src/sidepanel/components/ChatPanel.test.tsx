@@ -13,12 +13,17 @@ function getMessageInput(container: HTMLElement): HTMLTextAreaElement {
   return input!
 }
 
-function installChatPanelSendMessageMock(apiKey = '', keepUserMessagePending = false, quickActions: Array<{ label: string; prompt: string }> = []) {
+function installChatPanelSendMessageMock(
+  apiKey = '',
+  keepUserMessagePending = false,
+  quickActions: Array<{ label: string; prompt: string }> = [],
+  quickActionsPayload: Record<string, unknown> = {},
+) {
   const sendMessageMock = vi.mocked(chrome.runtime.sendMessage as any)
   sendMessageMock.mockReset()
   sendMessageMock.mockImplementation((message: any, callback?: (response: unknown) => void) => {
     if (message.type === MessageType.GET_HISTORY) callback?.({ type: MessageType.RESPONSE, requestId: message.requestId, payload: [] })
-    else if (message.type === MessageType.GET_QUICK_ACTIONS) callback?.({ type: MessageType.RESPONSE, requestId: message.requestId, payload: { actions: quickActions } })
+    else if (message.type === MessageType.GET_QUICK_ACTIONS) callback?.({ type: MessageType.RESPONSE, requestId: message.requestId, payload: { actions: quickActions, ...quickActionsPayload } })
     else if (message.type === MessageType.GET_PROVIDERS) callback?.({
       type: MessageType.RESPONSE,
       requestId: message.requestId,
@@ -139,6 +144,17 @@ describe('ChatPanel provider preflight', () => {
     expect(container.querySelector('[aria-label="快捷动作：看新闻"]')).toBeTruthy()
     expect(container.querySelector('[aria-label="快捷动作：找工作"]')).toBeTruthy()
     expect(container.querySelector('[aria-label="快捷动作：总结当前页"]')).toBeTruthy()
+  })
+
+  it('renders no quick actions when the worker returns an explicit empty state', async () => {
+    installChatPanelSendMessageMock('', false, [], { isExplicitEmpty: true })
+
+    await act(async () => {
+      root.render(<ChatPanel />)
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[aria-label^="快捷动作："]')).toBeFalsy()
   })
 
   it('renders quick action buttons and fills the input with focus when clicked', async () => {

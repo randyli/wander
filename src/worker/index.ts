@@ -194,7 +194,10 @@ async function getQuickActions(): Promise<QuickActionsPayload> {
     return true
   })
 
-  return { actions: actions.slice(0, 5) }
+  return {
+    actions: actions.slice(0, 5),
+    isExplicitEmpty: configured.length === 0 && settings.showRecommendedQuickActions === false,
+  }
 }
 
 function waitForTab(tabId: number, timeout = 10000): Promise<void> {
