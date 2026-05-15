@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { GeneralSettingsConfig, QuickActionConfig } from '@shared/types'
 import type { QuickAction, QuickActionsPayload } from '@shared/messages'
 
@@ -33,58 +33,75 @@ function fromRecommendation(action: QuickAction): QuickActionConfig {
   })
 }
 
+function serializeQuickSettings(settings: GeneralSettingsConfig): string {
+  return JSON.stringify({
+    quickActions: settings.quickActions ?? [],
+    showRecommendedQuickActions: settings.showRecommendedQuickActions ?? true,
+  })
+}
+
 export default function QuickActionsTab({ isDarkMode }: QuickActionsTabProps) {
   const [settings, setSettings] = useState<GeneralSettingsConfig | null>(null)
   const [recommendations, setRecommendations] = useState<QuickAction[]>([])
   const [saved, setSaved] = useState(false)
+  const [lastSavedQuickSettings, setLastSavedQuickSettings] = useState('')
 
   const load = useCallback(async () => {
     const [settingsRes, recommendationRes] = await Promise.all([
       send('GET_GENERAL_SETTINGS'),
       send('GET_QUICK_ACTION_RECOMMENDATIONS'),
     ])
-    setSettings(settingsRes.payload as GeneralSettingsConfig)
+    const loadedSettings = settingsRes.payload as GeneralSettingsConfig
+    setSettings(loadedSettings)
+    setLastSavedQuickSettings(serializeQuickSettings(loadedSettings))
     const payload = recommendationRes.payload as QuickActionsPayload
     setRecommendations(Array.isArray(payload.actions) ? payload.actions : [])
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  async function save(nextSettings: GeneralSettingsConfig) {
-    setSettings(nextSettings)
+  async function saveSettings() {
+    if (!settings) return
     await send('UPDATE_GENERAL_SETTINGS', {
-      quickActions: nextSettings.quickActions ?? [],
-      showRecommendedQuickActions: nextSettings.showRecommendedQuickActions ?? true,
+      quickActions: settings.quickActions ?? [],
+      showRecommendedQuickActions: settings.showRecommendedQuickActions ?? true,
     })
+    setLastSavedQuickSettings(serializeQuickSettings(settings))
     setSaved(true)
     setTimeout(() => setSaved(false), 1600)
   }
 
-  async function updateActions(updater: (actions: QuickActionConfig[]) => QuickActionConfig[]) {
+  function updateActions(updater: (actions: QuickActionConfig[]) => QuickActionConfig[]) {
     if (!settings) return
-    await save({ ...settings, quickActions: updater(settings.quickActions ?? []) })
+    setSaved(false)
+    setSettings({ ...settings, quickActions: updater(settings.quickActions ?? []) })
   }
 
-  async function updateAction(id: string, patch: Partial<QuickActionConfig>) {
-    await updateActions(actions => actions.map(action => action.id === id ? { ...action, ...patch } : action))
+  function updateAction(id: string, patch: Partial<QuickActionConfig>) {
+    updateActions(actions => actions.map(action => action.id === id ? { ...action, ...patch } : action))
   }
 
-  async function addBlankAction() {
-    await updateActions(actions => [...actions, createQuickAction({ label: '新快捷按钮', prompt: '请描述这个快捷按钮要发送给助手的指令。' })])
+  function addBlankAction() {
+    updateActions(actions => [...actions, createQuickAction({ label: '新快捷按钮', prompt: '请描述这个快捷按钮要发送给助手的指令。' })])
   }
 
-  async function addRecommendation(action: QuickAction) {
-    await updateActions(actions => [...actions, fromRecommendation(action)])
+  function addRecommendation(action: QuickAction) {
+    updateActions(actions => [...actions, fromRecommendation(action)])
   }
 
-  async function removeAction(id: string) {
-    await updateActions(actions => actions.filter(action => action.id !== id))
+  function removeAction(id: string) {
+    updateActions(actions => actions.filter(action => action.id !== id))
   }
 
-  async function toggleRecommendations(enabled: boolean) {
+  function toggleRecommendations(enabled: boolean) {
     if (!settings) return
-    await save({ ...settings, showRecommendedQuickActions: enabled })
+    setSaved(false)
+    setSettings({ ...settings, showRecommendedQuickActions: enabled })
   }
+
+  const isDirty = useMemo(() => (
+    settings !== null && serializeQuickSettings(settings) !== lastSavedQuickSettings
+  ), [settings, lastSavedQuickSettings])
 
   if (!settings) return <div className="animate-pulse space-y-4"><div className="h-8 w-48 rounded bg-gray-200" /><div className="h-32 rounded bg-gray-200" /></div>
 
@@ -95,6 +112,7 @@ export default function QuickActionsTab({ isDarkMode }: QuickActionsTabProps) {
   const dangerButton = 'rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/20'
   const configuredActions = settings.quickActions ?? []
   const configuredLabels = new Set(configuredActions.map(action => action.label.trim().toLowerCase()).filter(Boolean))
+  const saveButton = `rounded-lg px-4 py-2 text-sm font-medium text-white ${isDirty ? 'bg-indigo-600 hover:bg-indigo-700' : 'cursor-not-allowed bg-indigo-400 opacity-60'}`
 
   return (
     <div>
@@ -102,8 +120,12 @@ export default function QuickActionsTab({ isDarkMode }: QuickActionsTabProps) {
         <div>
           <h2 className="text-xl font-semibold">Quick Actions</h2>
           <p className="mt-1 text-sm opacity-60">管理侧边栏输入框上方的快捷按钮。你可以手动定制，也可以把系统基于记忆、书签和历史推荐的按钮加入列表。</p>
+          {isDirty && <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">Unsaved changes</p>}
         </div>
-        {saved && <span className="rounded-full bg-green-100 px-3 py-1 text-xs text-green-700 dark:bg-green-900/30 dark:text-green-300">Saved</span>}
+        <div className="flex items-center gap-3">
+          {saved && <span className="rounded-full bg-green-100 px-3 py-1 text-xs text-green-700 dark:bg-green-900/30 dark:text-green-300">Saved</span>}
+          <button type="button" onClick={saveSettings} disabled={!isDirty} className={saveButton}>Save</button>
+        </div>
       </div>
 
       <div className={`mb-6 rounded-xl border ${cardBg} p-5 shadow-sm`}>
