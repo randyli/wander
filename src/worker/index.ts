@@ -1,6 +1,6 @@
 import { MessageType } from '@shared/messages'
 import type { QuickAction, QuickActionsPayload, TaskEventPayload } from '@shared/messages'
-import type { LLMMessage, ProviderConfig, GeneralSettingsConfig, QuickActionConfig } from '@shared/types'
+import type { Episode, KnowledgeEntry, LLMMessage, ProviderConfig, GeneralSettingsConfig, QuickActionConfig } from '@shared/types'
 import { validateSelectedProviderConfig } from '@shared/providerConfig'
 import { llmProviderStore, generalSettingsStore } from '../storage'
 import { Orchestrator } from './orchestrator'
@@ -71,6 +71,13 @@ interface RecommendedQuickActionContextItem {
 
 const MAX_RECOMMENDED_QUICK_ACTIONS = 5
 const MAX_QUICK_ACTION_CONTEXT_ITEMS = 80
+const QUICK_ACTION_CONTEXT_LIMITS: Record<RecommendedQuickActionContextItem['type'], number> = {
+  history: 30,
+  bookmark: 25,
+  episode: 12,
+  knowledge: 12,
+  profile: 1,
+}
 
 function truncateQuickActionText(value: string | undefined, maxLength: number): string | undefined {
   const normalized = value?.replace(/\s+/g, ' ').trim()
@@ -90,18 +97,93 @@ function pushQuickActionContextItem(
 function addBookmarkQuickActionContext(
   items: RecommendedQuickActionContextItem[],
   nodes: chrome.bookmarks.BookmarkTreeNode[],
+  maxItems = QUICK_ACTION_CONTEXT_LIMITS.bookmark,
 ): void {
   for (const node of nodes) {
-    if (items.length >= MAX_QUICK_ACTION_CONTEXT_ITEMS) return
+    if (items.length >= maxItems) return
     if (node.url || node.title) {
       pushQuickActionContextItem(items, {
         type: 'bookmark',
         title: truncateQuickActionText(node.title, 120),
         url: truncateQuickActionText(node.url, 160),
-      })
+      }, maxItems)
     }
-    if (node.children) addBookmarkQuickActionContext(items, node.children)
+    if (node.children) addBookmarkQuickActionContext(items, node.children, maxItems)
   }
+}
+
+export function buildRecommendedQuickActionContextItems({
+  historyItems,
+  bookmarkTree,
+  episodes,
+  knowledge,
+  profile,
+}: {
+  historyItems: chrome.history.HistoryItem[]
+  bookmarkTree: chrome.bookmarks.BookmarkTreeNode[]
+  episodes?: Episode[] | null
+  knowledge?: KnowledgeEntry[] | null
+  profile?: string
+}): RecommendedQuickActionContextItem[] {
+  const historyContextItems: RecommendedQuickActionContextItem[] = []
+  const bookmarkContextItems: RecommendedQuickActionContextItem[] = []
+  const episodeContextItems: RecommendedQuickActionContextItem[] = []
+  const knowledgeContextItems: RecommendedQuickActionContextItem[] = []
+  const profileContextItems: RecommendedQuickActionContextItem[] = []
+
+  for (const item of historyItems) {
+    let domain: string | undefined
+    if (item.url) {
+      try {
+        domain = new URL(item.url).hostname
+      } catch { /* ignore invalid URLs */ }
+    }
+
+    pushQuickActionContextItem(historyContextItems, {
+      type: 'history',
+      title: truncateQuickActionText(item.title, 120),
+      url: truncateQuickActionText(item.url, 160),
+      domain,
+      visits: item.visitCount,
+    }, QUICK_ACTION_CONTEXT_LIMITS.history)
+  }
+
+  addBookmarkQuickActionContext(bookmarkContextItems, bookmarkTree)
+
+  for (const episode of episodes ?? []) {
+    pushQuickActionContextItem(episodeContextItems, {
+      type: 'episode',
+      summary: truncateQuickActionText(episode.summary, 240),
+      domain: truncateQuickActionText(episode.domain, 120),
+      tags: episode.tags?.slice(0, 8),
+    }, QUICK_ACTION_CONTEXT_LIMITS.episode)
+  }
+
+  for (const entry of knowledge ?? []) {
+    pushQuickActionContextItem(knowledgeContextItems, {
+      type: 'knowledge',
+      title: truncateQuickActionText(entry.key, 120),
+      value: truncateQuickActionText(entry.value, 240),
+      domain: truncateQuickActionText(entry.domain, 120),
+      tags: entry.tags?.slice(0, 8),
+    }, QUICK_ACTION_CONTEXT_LIMITS.knowledge)
+  }
+
+  const profileSummary = truncateQuickActionText(profile, 500)
+  if (profileSummary) {
+    pushQuickActionContextItem(profileContextItems, {
+      type: 'profile',
+      summary: profileSummary,
+    }, QUICK_ACTION_CONTEXT_LIMITS.profile)
+  }
+
+  return [
+    ...historyContextItems,
+    ...episodeContextItems,
+    ...knowledgeContextItems,
+    ...profileContextItems,
+    ...bookmarkContextItems,
+  ].slice(0, MAX_QUICK_ACTION_CONTEXT_ITEMS)
 }
 
 function extractQuickActionJson(content: string): unknown {
@@ -210,53 +292,13 @@ async function getRecommendedQuickActions(settings?: GeneralSettingsConfig): Pro
     knowledgeStore?.list?.().catch(() => []),
   ])
 
-  const contextItems: RecommendedQuickActionContextItem[] = []
-
-  for (const item of historyItems) {
-    let domain: string | undefined
-    if (item.url) {
-      try {
-        domain = new URL(item.url).hostname
-      } catch { /* ignore invalid URLs */ }
-    }
-
-    pushQuickActionContextItem(contextItems, {
-      type: 'history',
-      title: truncateQuickActionText(item.title, 120),
-      url: truncateQuickActionText(item.url, 160),
-      domain,
-      visits: item.visitCount,
-    })
-  }
-
-  addBookmarkQuickActionContext(contextItems, bookmarkTree)
-
-  for (const episode of episodes ?? []) {
-    pushQuickActionContextItem(contextItems, {
-      type: 'episode',
-      summary: truncateQuickActionText(episode.summary, 240),
-      domain: truncateQuickActionText(episode.domain, 120),
-      tags: episode.tags?.slice(0, 8),
-    })
-  }
-
-  for (const entry of knowledge ?? []) {
-    pushQuickActionContextItem(contextItems, {
-      type: 'knowledge',
-      title: truncateQuickActionText(entry.key, 120),
-      value: truncateQuickActionText(entry.value, 240),
-      domain: truncateQuickActionText(entry.domain, 120),
-      tags: entry.tags?.slice(0, 8),
-    })
-  }
-
-  const profile = truncateQuickActionText(systemMemory?.get?.()?.profile, 500)
-  if (profile) {
-    pushQuickActionContextItem(contextItems, {
-      type: 'profile',
-      summary: profile,
-    })
-  }
+  const contextItems = buildRecommendedQuickActionContextItems({
+    historyItems,
+    bookmarkTree,
+    episodes,
+    knowledge,
+    profile: systemMemory?.get?.()?.profile,
+  })
 
   try {
     const { getLLMClient } = await import('./llm/client')
