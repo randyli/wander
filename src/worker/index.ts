@@ -25,6 +25,7 @@ import memoryReadMd from '../../skills/memory-read.md?raw'
 import memoryWriteMd from '../../skills/memory-write.md?raw'
 import readHistoryMd from '../../skills/read-history.md?raw'
 import polymarketMd from '../../skills/polymarket.md?raw'
+import weatherOpenMeteoMd from '../../skills/weather-open-meteo.md?raw'
 
 let skillRegistry: SkillRegistry
 let agentRegistry: AgentRegistry
@@ -597,7 +598,18 @@ async function doInit() {
 }
 
 async function seedBuiltins() {
-  const builtinSkills = [readPageMd, takeScreenshotMd, navigateMd, clickMd, fillFormMd, memoryReadMd, memoryWriteMd, readHistoryMd, polymarketMd]
+  const builtinSkills = [
+    readPageMd,
+    takeScreenshotMd,
+    navigateMd,
+    clickMd,
+    fillFormMd,
+    memoryReadMd,
+    memoryWriteMd,
+    readHistoryMd,
+    polymarketMd,
+    weatherOpenMeteoMd,
+  ]
   await Promise.all(builtinSkills.map(md => skillRegistry.install(md)))
 
   await agentRegistry.install(orchestratorAgentMd)
