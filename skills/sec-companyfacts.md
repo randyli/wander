@@ -2,7 +2,7 @@
 name: sec-companyfacts
 type: skill
 description: Fetch public SEC EDGAR company facts and ticker-CIK mappings for U.S. issuers
-tool: net.fetch
+tool: finance.sec
 parameters:
   url: string
 ---

@@ -2,7 +2,7 @@
 name: treasury-data-fiscaldata
 type: skill
 description: Fetch public U.S. Treasury datasets from the Fiscal Data API
-tool: net.fetch
+tool: finance.fiscaldata
 parameters:
   url: string
 ---

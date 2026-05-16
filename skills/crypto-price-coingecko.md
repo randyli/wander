@@ -2,7 +2,7 @@
 name: crypto-price-coingecko
 type: skill
 description: Fetch public cryptocurrency prices and market data from CoinGecko API endpoints
-tool: net.fetch
+tool: finance.coingecko
 parameters:
   url: string
 ---

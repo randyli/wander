@@ -2,7 +2,7 @@
 name: stock-quote-stooq
 type: skill
 description: Fetch delayed stock, ETF, index, futures, and FX quote snapshots from Stooq CSV endpoints
-tool: net.fetch
+tool: finance.stooq
 parameters:
   url: string
 ---

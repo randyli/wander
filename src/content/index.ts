@@ -43,7 +43,12 @@ async function executeTool(tool: string, params: Record<string, unknown>): Promi
     case 'nav.goto':     return navGoto(params as { url: string })
     case 'nav.back':     return navBack()
     case 'nav.forward':  return navForward()
-    case 'net.fetch':    return netFetch(params as { url: string; options?: RequestInit })
+    case 'net.fetch':
+    case 'finance.stooq':
+    case 'finance.coingecko':
+    case 'finance.frankfurter':
+    case 'finance.fiscaldata':
+    case 'finance.sec':  return netFetch(params as { url: string; options?: RequestInit })
     default:             throw new Error(`Unknown tool: ${tool}`)
   }
 }

@@ -2,7 +2,7 @@
 name: fx-rates-frankfurter
 type: skill
 description: Fetch fiat exchange rates and historical conversions from the Frankfurter public API
-tool: net.fetch
+tool: finance.frankfurter
 parameters:
   url: string
 ---
