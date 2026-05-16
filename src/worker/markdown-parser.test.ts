@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { parseAgentMarkdown, parseSkillMarkdown } from './markdown-parser'
 
@@ -58,5 +59,25 @@ describe('parseSkillMarkdown', () => {
   it('parses instructions from body', () => {
     const skill = parseSkillMarkdown(skillMd)
     expect(skill.instructions).toContain('visible text')
+  })
+
+  it('keeps built-in finance skill tool names unique', () => {
+    const financeSkillPaths = [
+      'skills/stock-quote-stooq.md',
+      'skills/crypto-price-coingecko.md',
+      'skills/fx-rates-frankfurter.md',
+      'skills/treasury-data-fiscaldata.md',
+      'skills/sec-companyfacts.md',
+    ]
+    const tools = financeSkillPaths.map(path => parseSkillMarkdown(readFileSync(path, 'utf8')).tool)
+
+    expect(new Set(tools).size).toBe(tools.length)
+    expect(tools).toEqual([
+      'finance.stooq',
+      'finance.coingecko',
+      'finance.frankfurter',
+      'finance.fiscaldata',
+      'finance.sec',
+    ])
   })
 })
