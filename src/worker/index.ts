@@ -18,6 +18,7 @@ import searchAgentMd from '../../agents/search-agent.md?raw'
 import jobHunterMd from '../../agents/job-hunter.md?raw'
 import weatherAgentMd from '../../agents/weather-agent.md?raw'
 import predictionAgentMd from '../../agents/prediction-agent.md?raw'
+import financeAgentMd from '../../agents/finance-agent.md?raw'
 import readPageMd from '../../skills/read-page.md?raw'
 import takeScreenshotMd from '../../skills/take-screenshot.md?raw'
 import navigateMd from '../../skills/navigate.md?raw'
@@ -28,6 +29,11 @@ import memoryWriteMd from '../../skills/memory-write.md?raw'
 import readHistoryMd from '../../skills/read-history.md?raw'
 import polymarketMd from '../../skills/polymarket.md?raw'
 import weatherOpenMeteoMd from '../../skills/weather-open-meteo.md?raw'
+import stockQuoteStooqMd from '../../skills/stock-quote-stooq.md?raw'
+import cryptoPriceCoingeckoMd from '../../skills/crypto-price-coingecko.md?raw'
+import fxRatesFrankfurterMd from '../../skills/fx-rates-frankfurter.md?raw'
+import treasuryDataFiscaldataMd from '../../skills/treasury-data-fiscaldata.md?raw'
+import secCompanyfactsMd from '../../skills/sec-companyfacts.md?raw'
 
 let skillRegistry: SkillRegistry
 let agentRegistry: AgentRegistry
@@ -611,6 +617,11 @@ async function seedBuiltins() {
     readHistoryMd,
     polymarketMd,
     weatherOpenMeteoMd,
+    stockQuoteStooqMd,
+    cryptoPriceCoingeckoMd,
+    fxRatesFrankfurterMd,
+    treasuryDataFiscaldataMd,
+    secCompanyfactsMd,
   ]
   await Promise.all(builtinSkills.map(md => skillRegistry.install(md)))
 
@@ -620,6 +631,7 @@ async function seedBuiltins() {
   await agentRegistry.install(jobHunterMd)
   await agentRegistry.install(weatherAgentMd)
   await agentRegistry.install(predictionAgentMd)
+  await agentRegistry.install(financeAgentMd)
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
